@@ -8,11 +8,11 @@ on:
         type: boolean
         default: false
       build_linux_x64:
-        description: 'Build Linux x64 (self-hosted)'
+        description: 'Build Linux x64'
         type: boolean
         default: false
       build_linux_arm64:
-        description: 'Build Linux arm64 (self-hosted)'
+        description: 'Build Linux arm64'
         type: boolean
         default: false
       build_darwin_x64:
@@ -38,22 +38,11 @@ jobs:
         run: |
           entries='[]'
           append() { entries=$(echo "$entries" | jq -c --argjson item "$1" '. + [$item]'); }
-
-          if [ "${{ inputs.build_win32 }}" = "true" ]; then
-            append '{"platform":"win32","arch":"x64","ext":"zip","runner":"windows-latest"}'
-          fi
-          if [ "${{ inputs.build_linux_x64 }}" = "true" ]; then
-            append '{"platform":"linux","arch":"x64","ext":"tar.gz","runner":"self-hosted"}'
-          fi
-          if [ "${{ inputs.build_linux_arm64 }}" = "true" ]; then
-            append '{"platform":"linux","arch":"arm64","ext":"tar.gz","runner":"self-hosted"}'
-          fi
-          if [ "${{ inputs.build_darwin_x64 }}" = "true" ]; then
-            append '{"platform":"darwin","arch":"x64","ext":"tar.gz","runner":"macos-13"}'
-          fi
-          if [ "${{ inputs.build_darwin_arm64 }}" = "true" ]; then
-            append '{"platform":"darwin","arch":"arm64","ext":"tar.gz","runner":"macos-latest"}'
-          fi
+          [ "${{ inputs.build_win32 }}" = "true" ] && append '{"platform":"win32" ,"arch":"x64"  ,"ext":"zip"   ,"runner":"windows-latest"}'
+          [ "${{ inputs.build_linux_x64 }}" = "true" ] && append '{"platform":"linux"  ,"arch":"x64"  ,"ext":"tar.gz","runner":"ubuntu-latest"}'
+          [ "${{ inputs.build_linux_arm64 }}" = "true" ] && append '{"platform":"linux"  ,"arch":"arm64","ext":"tar.gz","runner":"ubuntu-24.04-arm"}'
+          [ "${{ inputs.build_darwin_x64 }}" = "true" ] && append '{"platform":"darwin" ,"arch":"x64"  ,"ext":"tar.gz","runner":"macos-13"}'
+          [ "${{ inputs.build_darwin_arm64 }}" = "true" ] && append '{"platform":"darwin" ,"arch":"arm64","ext":"tar.gz","runner":"macos-latest"}'
           echo "matrix=$entries" >> "$GITHUB_OUTPUT"
 
   build:
@@ -65,57 +54,20 @@ jobs:
     runs-on: ${{ matrix.runner }}
 
     steps:
-      # ── Self-hosted workspace cleanup ──
-      - name: Fix workspace permissions (self-hosted)
-        if: matrix.runner == 'self-hosted'
-        run: sudo chown -R $(id -u):$(id -g) "${{ github.workspace }}" 2>/dev/null || true
-
       - uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 1
 
       - uses: actions/setup-python@v5
-        if: matrix.runner != 'self-hosted'
         with:
           python-version: '3.13'
 
-      - name: Set up QEMU (self-hosted x64)
-        if: matrix.runner == 'self-hosted' && matrix.arch == 'x64'
-        uses: docker/setup-qemu-action@v3
-
-      - name: Build (GitHub hosted)
-        if: matrix.runner != 'self-hosted'
+      - name: Build
         run: |
           pip install --upgrade pip
           pip install pyinstaller
           python scripts/build.py
-
-      - name: Build arm64 (self-hosted native)
-        if: matrix.runner == 'self-hosted' && matrix.arch == 'arm64'
-        run: |
-          command -v pip3 >/dev/null 2>&1 || sudo apt-get update -qq && sudo apt-get install -y -qq python3-pip
-          python3 -m pip install --upgrade pip
-          python3 scripts/build.py
-
-      - name: Build x64 (self-hosted via Docker + QEMU)
-        if: matrix.runner == 'self-hosted' && matrix.arch == 'x64'
-        run: |
-          docker run --rm \
-            --platform linux/amd64 \
-            -v "${{ github.workspace }}:/workspace" \
-            -w /workspace \
-            amd64/ubuntu:22.04 \
-            bash -c "
-              apt-get update -qq && apt-get install -y -qq git python3 python3-pip python3-venv
-              python3 -m venv /venv
-              /venv/bin/pip install --upgrade pip
-              /venv/bin/python scripts/build.py
-            "
-
-      - name: Fix permissions (self-hosted Docker artifacts)
-        if: matrix.runner == 'self-hosted'
-        run: sudo chown -R $(id -u):$(id -g) "${{ github.workspace }}" 2>/dev/null || true
 
       - name: Create tar.gz archive
         if: matrix.ext == 'tar.gz'
