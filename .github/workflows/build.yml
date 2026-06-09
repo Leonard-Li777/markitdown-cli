@@ -6,97 +6,100 @@ on:
       build_win32:
         description: 'Build Windows x64'
         type: boolean
-        default: true
+        default: false
       build_linux_x64:
         description: 'Build Linux x64 (self-hosted)'
         type: boolean
-        default: true
+        default: false
       build_linux_arm64:
         description: 'Build Linux arm64 (self-hosted)'
         type: boolean
-        default: true
+        default: false
       build_darwin_x64:
         description: 'Build macOS x64'
         type: boolean
-        default: true
+        default: false
       build_darwin_arm64:
         description: 'Build macOS arm64'
         type: boolean
-        default: true
+        default: false
       create_release:
         description: 'Publish to GitHub Release'
         type: boolean
         default: false
 
 jobs:
+  select:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        run: |
+          entries='[]'
+          append() { entries=$(echo "$entries" | jq -c --argjson item "$1" '. + [$item]'); }
+
+          if [ "${{ inputs.build_win32 }}" = "true" ]; then
+            append '{"platform":"win32","arch":"x64","ext":"zip","runner":"windows-latest"}'
+          fi
+          if [ "${{ inputs.build_linux_x64 }}" = "true" ]; then
+            append '{"platform":"linux","arch":"x64","ext":"tar.gz","runner":"self-hosted"}'
+          fi
+          if [ "${{ inputs.build_linux_arm64 }}" = "true" ]; then
+            append '{"platform":"linux","arch":"arm64","ext":"tar.gz","runner":"self-hosted"}'
+          fi
+          if [ "${{ inputs.build_darwin_x64 }}" = "true" ]; then
+            append '{"platform":"darwin","arch":"x64","ext":"tar.gz","runner":"macos-13"}'
+          fi
+          if [ "${{ inputs.build_darwin_arm64 }}" = "true" ]; then
+            append '{"platform":"darwin","arch":"arm64","ext":"tar.gz","runner":"macos-latest"}'
+          fi
+          echo "matrix=$entries" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: select
+    if: needs.select.outputs.matrix != '[]'
     strategy:
       matrix:
-        include:
-          - platform: win32
-            arch: x64
-            ext: zip
-            runner: windows-latest
-          - platform: linux
-            arch: x64
-            ext: tar.gz
-            runner: self-hosted
-          - platform: linux
-            arch: arm64
-            ext: tar.gz
-            runner: self-hosted
-          - platform: darwin
-            arch: x64
-            ext: tar.gz
-            runner: macos-13
-          - platform: darwin
-            arch: arm64
-            ext: tar.gz
-            runner: macos-latest
+        include: ${{ fromJSON(needs.select.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
 
     steps:
-      - name: Check platform selection
-        id: check
-        run: echo "selected=true" >> "$GITHUB_OUTPUT"
-        if: |
-          (matrix.platform == 'win32' && fromJSON(inputs.build_win32)) ||
-          (matrix.platform == 'linux' && matrix.arch == 'x64' && fromJSON(inputs.build_linux_x64)) ||
-          (matrix.platform == 'linux' && matrix.arch == 'arm64' && fromJSON(inputs.build_linux_arm64)) ||
-          (matrix.platform == 'darwin' && matrix.arch == 'x64' && fromJSON(inputs.build_darwin_x64)) ||
-          (matrix.platform == 'darwin' && matrix.arch == 'arm64' && fromJSON(inputs.build_darwin_arm64))
+      # ── Self-hosted workspace cleanup ──
+      - name: Fix workspace permissions (self-hosted)
+        if: matrix.runner == 'self-hosted'
+        run: sudo chown -R $(id -u):$(id -g) "${{ github.workspace }}" 2>/dev/null || true
 
       - uses: actions/checkout@v4
-        if: steps.check.conclusion == 'success'
         with:
           submodules: recursive
           fetch-depth: 1
 
       - uses: actions/setup-python@v5
-        if: steps.check.conclusion == 'success' && matrix.runner != 'self-hosted'
+        if: matrix.runner != 'self-hosted'
         with:
           python-version: '3.13'
 
       - name: Set up QEMU (self-hosted x64)
-        if: steps.check.conclusion == 'success' && matrix.runner == 'self-hosted' && matrix.arch == 'x64'
+        if: matrix.runner == 'self-hosted' && matrix.arch == 'x64'
         uses: docker/setup-qemu-action@v3
 
       - name: Build (GitHub hosted)
-        if: steps.check.conclusion == 'success' && matrix.runner != 'self-hosted'
+        if: matrix.runner != 'self-hosted'
         run: |
           pip install --upgrade pip
           pip install pyinstaller
           python scripts/build.py
 
       - name: Build arm64 (self-hosted native)
-        if: steps.check.conclusion == 'success' && matrix.runner == 'self-hosted' && matrix.arch == 'arm64'
+        if: matrix.runner == 'self-hosted' && matrix.arch == 'arm64'
         run: |
           command -v pip3 >/dev/null 2>&1 || sudo apt-get update -qq && sudo apt-get install -y -qq python3-pip
           python3 -m pip install --upgrade pip
           python3 scripts/build.py
 
       - name: Build x64 (self-hosted via Docker + QEMU)
-        if: steps.check.conclusion == 'success' && matrix.runner == 'self-hosted' && matrix.arch == 'x64'
+        if: matrix.runner == 'self-hosted' && matrix.arch == 'x64'
         run: |
           docker run --rm \
             --platform linux/amd64 \
@@ -110,30 +113,29 @@ jobs:
               /venv/bin/python scripts/build.py
             "
 
-      - name: Fix permissions (self-hosted Docker)
-        if: steps.check.conclusion == 'success' && matrix.runner == 'self-hosted' && matrix.arch == 'x64'
-        run: sudo chown -R $(id -u):$(id -g) dist/ 2>/dev/null || true
+      - name: Fix permissions (self-hosted Docker artifacts)
+        if: matrix.runner == 'self-hosted'
+        run: sudo chown -R $(id -u):$(id -g) "${{ github.workspace }}" 2>/dev/null || true
 
       - name: Create tar.gz archive
-        if: steps.check.conclusion == 'success' && matrix.ext == 'tar.gz'
+        if: matrix.ext == 'tar.gz'
         run: tar -czf "markitdown-bin-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz" -C dist .
 
       - name: Create zip archive
-        if: steps.check.conclusion == 'success' && matrix.ext == 'zip'
+        if: matrix.ext == 'zip'
         shell: pwsh
         run: |
           $name = "markitdown-bin-${{ matrix.platform }}-${{ matrix.arch }}"
           Compress-Archive -Path "dist/*" -DestinationPath "$name.zip" -CompressionLevel Optimal
 
       - uses: actions/upload-artifact@v4
-        if: steps.check.conclusion == 'success'
         with:
           name: markitdown-bin-${{ matrix.platform }}-${{ matrix.arch }}
           path: markitdown-bin-${{ matrix.platform }}-${{ matrix.arch }}.${{ matrix.ext }}
 
   release:
     if: always() && fromJSON(inputs.create_release)
-    needs: build
+    needs: [select, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
