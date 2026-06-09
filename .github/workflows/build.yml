@@ -32,6 +32,7 @@ jobs:
         if: matrix.arch == 'x64'
         run: |
           docker run --rm \
+            --platform linux/amd64 \
             -v "${{ github.workspace }}:/workspace" \
             -w /workspace \
             amd64/ubuntu:22.04 \

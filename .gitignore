@@ -27,3 +27,4 @@ Thumbs.db
 *.zip
 *.tar.gz
 tessdata/
+scripts/create_run.sh
