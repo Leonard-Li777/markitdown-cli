@@ -1,10 +1,28 @@
 name: Build
 
 on:
-  push:
-    branches: [master]
-    tags: ['v*']
   workflow_dispatch:
+    inputs:
+      build_win32:
+        description: 'Build Windows x64'
+        type: boolean
+        default: true
+      build_linux_x64:
+        description: 'Build Linux x64 (self-hosted)'
+        type: boolean
+        default: true
+      build_linux_arm64:
+        description: 'Build Linux arm64 (self-hosted)'
+        type: boolean
+        default: true
+      build_darwin_x64:
+        description: 'Build macOS x64'
+        type: boolean
+        default: true
+      build_darwin_arm64:
+        description: 'Build macOS arm64'
+        type: boolean
+        default: true
 
 jobs:
   build:
@@ -34,35 +52,47 @@ jobs:
     runs-on: ${{ matrix.runner }}
 
     steps:
+      - name: Check platform selection
+        id: check
+        run: echo "selected=true" >> "$GITHUB_OUTPUT"
+        if: |
+          (matrix.platform == 'win32' && fromJSON(inputs.build_win32)) ||
+          (matrix.platform == 'linux' && matrix.arch == 'x64' && fromJSON(inputs.build_linux_x64)) ||
+          (matrix.platform == 'linux' && matrix.arch == 'arm64' && fromJSON(inputs.build_linux_arm64)) ||
+          (matrix.platform == 'darwin' && matrix.arch == 'x64' && fromJSON(inputs.build_darwin_x64)) ||
+          (matrix.platform == 'darwin' && matrix.arch == 'arm64' && fromJSON(inputs.build_darwin_arm64))
+
       - uses: actions/checkout@v4
+        if: steps.check.conclusion == 'success'
         with:
           submodules: recursive
+          fetch-depth: 1
 
       - uses: actions/setup-python@v5
-        if: matrix.runner != 'self-hosted'
+        if: steps.check.conclusion == 'success' && matrix.runner != 'self-hosted'
         with:
           python-version: '3.13'
 
       - name: Set up QEMU (self-hosted x64)
-        if: matrix.runner == 'self-hosted' && matrix.arch == 'x64'
+        if: steps.check.conclusion == 'success' && matrix.runner == 'self-hosted' && matrix.arch == 'x64'
         uses: docker/setup-qemu-action@v3
 
       - name: Build (GitHub hosted)
-        if: matrix.runner != 'self-hosted'
+        if: steps.check.conclusion == 'success' && matrix.runner != 'self-hosted'
         run: |
           pip install --upgrade pip
           pip install pyinstaller
           python scripts/build.py
 
       - name: Build arm64 (self-hosted native)
-        if: matrix.runner == 'self-hosted' && matrix.arch == 'arm64'
+        if: steps.check.conclusion == 'success' && matrix.runner == 'self-hosted' && matrix.arch == 'arm64'
         run: |
           command -v pip3 >/dev/null 2>&1 || sudo apt-get update -qq && sudo apt-get install -y -qq python3-pip
           python3 -m pip install --upgrade pip
           python3 scripts/build.py
 
       - name: Build x64 (self-hosted via Docker + QEMU)
-        if: matrix.runner == 'self-hosted' && matrix.arch == 'x64'
+        if: steps.check.conclusion == 'success' && matrix.runner == 'self-hosted' && matrix.arch == 'x64'
         run: |
           docker run --rm \
             --platform linux/amd64 \
@@ -77,21 +107,22 @@ jobs:
             "
 
       - name: Fix permissions (self-hosted Docker)
-        if: matrix.runner == 'self-hosted' && matrix.arch == 'x64'
+        if: steps.check.conclusion == 'success' && matrix.runner == 'self-hosted' && matrix.arch == 'x64'
         run: sudo chown -R $(id -u):$(id -g) dist/ 2>/dev/null || true
 
       - name: Create tar.gz archive
-        if: matrix.ext == 'tar.gz'
+        if: steps.check.conclusion == 'success' && matrix.ext == 'tar.gz'
         run: tar -czf "markitdown-bin-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz" -C dist .
 
       - name: Create zip archive
-        if: matrix.ext == 'zip'
+        if: steps.check.conclusion == 'success' && matrix.ext == 'zip'
         shell: pwsh
         run: |
           $name = "markitdown-bin-${{ matrix.platform }}-${{ matrix.arch }}"
           Compress-Archive -Path "dist/*" -DestinationPath "$name.zip" -CompressionLevel Optimal
 
       - uses: actions/upload-artifact@v4
+        if: steps.check.conclusion == 'success'
         with:
           name: markitdown-bin-${{ matrix.platform }}-${{ matrix.arch }}
           path: markitdown-bin-${{ matrix.platform }}-${{ matrix.arch }}.${{ matrix.ext }}
