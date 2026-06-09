@@ -172,6 +172,10 @@ def setup_tesseract_windows(tesseract_dir: Path):
             for f in tess_src.iterdir():
                 shutil.copy2(f, tess_dst)
 
+    if installer.exists():
+        installer.unlink()
+        info("Removed installer")
+
     if exe.exists():
         ok("Tesseract extracted and flattened")
     else:
