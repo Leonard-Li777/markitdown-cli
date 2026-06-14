@@ -75,6 +75,25 @@ class ConverterRegistration:
     priority: float
 
 
+class FallbackMetadataConverter(DocumentConverter):
+    def accepts(self, file_stream: BinaryIO, stream_info: StreamInfo, **kwargs: Any) -> bool:
+        # Accept any file if metadata is requested and exiftool is available
+        return bool(kwargs.get("with_metadata") or kwargs.get("metadata_only")) and bool(kwargs.get("exiftool_path"))
+
+    def convert(self, file_stream: BinaryIO, stream_info: StreamInfo, **kwargs: Any) -> DocumentConverterResult:
+        from .converters._exiftool import exiftool_metadata
+        exiftool_path = kwargs.get("exiftool_path")
+        meta = {}
+        md_content = ""
+        raw_meta = exiftool_metadata(file_stream, exiftool_path=exiftool_path)
+        if raw_meta:
+            for k, v in raw_meta.items():
+                meta[k] = v
+                if kwargs.get("with_metadata"):
+                    md_content += f"{k}: {v}\n"
+        return DocumentConverterResult(markdown=md_content, metadata=meta)
+
+
 class MarkItDown:
     def __init__(
         self,
@@ -102,6 +121,9 @@ class MarkItDown:
         self._llm_prompt: Union[str | None] = None
         self._exiftool_path: Union[str | None] = None
         self._style_map: Union[str | None] = None
+
+        self._with_metadata = kwargs.get("with_metadata", False)
+        self._metadata_only = kwargs.get("metadata_only", False)
 
         self._converters: List[ConverterRegistration] = []
 
@@ -151,6 +173,7 @@ class MarkItDown:
             self.register_converter(OutlookMsgConverter())
             self.register_converter(EpubConverter())
             self.register_converter(CsvConverter())
+            self.register_converter(FallbackMetadataConverter(), priority=100.0)
 
             docintel_endpoint = kwargs.get("docintel_endpoint")
             if docintel_endpoint is not None:
@@ -337,8 +360,8 @@ class MarkItDown:
         cur_pos = file_stream.tell()
 
         # Extract metadata flags
-        with_metadata = kwargs.pop("with_metadata", False)
-        metadata_only = kwargs.pop("metadata_only", False)
+        with_metadata = kwargs.pop("with_metadata", self._with_metadata)
+        metadata_only = kwargs.pop("metadata_only", self._metadata_only)
 
         for stream_info in stream_info_guesses + [StreamInfo()]:
             for converter_registration in sorted_registrations:
@@ -346,6 +369,8 @@ class MarkItDown:
                 assert cur_pos == file_stream.tell(), "File stream position should NOT change between guess iterations"
 
                 _kwargs = {k: v for k, v in kwargs.items()}
+                _kwargs["with_metadata"] = with_metadata
+                _kwargs["metadata_only"] = metadata_only
 
                 if "llm_client" not in _kwargs and self._llm_client is not None:
                     _kwargs["llm_client"] = self._llm_client

@@ -62,6 +62,10 @@ WINDOWS_TESSERACT_URL = (
     "tesseract-ocr-w64-setup-5.5.0.20241111.exe/download"
 )
 
+EXIFTOOL_VERSION = "13.59"
+WINDOWS_EXIFTOOL_URL = f"https://exiftool.org/exiftool-{EXIFTOOL_VERSION}_64.zip"
+UNIX_EXIFTOOL_URL = f"https://exiftool.org/Image-ExifTool-{EXIFTOOL_VERSION}.tar.gz"
+
 TESDATA_BASE = "https://github.com/tesseract-ocr/tessdata_fast/raw/main"
 TESSDATA_LANGS = ["eng", "chi_sim", "chi_tra"]
 
@@ -182,6 +186,117 @@ def setup_tesseract_windows(tesseract_dir: Path):
         warn("tesseract.exe not found — OCR will not work")
 
 
+def setup_exiftool_windows(exiftool_dir: Path):
+    zip_file = DIST_DIR / "exiftool_setup.zip"
+    temp_dir = DIST_DIR / "exiftool_temp"
+
+    if not zip_file.exists():
+        download_file(WINDOWS_EXIFTOOL_URL, zip_file)
+
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)
+    temp_dir.mkdir(parents=True, exist_ok=True)
+
+    seven_zip = (
+        shutil.which("7z")
+        or shutil.which("7za")
+        or (Path("C:/Program Files/7-Zip/7z.exe") if Path("C:/Program Files/7-Zip/7z.exe").exists() else None)
+        or (Path("C:/Program Files (x86)/7-Zip/7z.exe") if Path("C:/Program Files (x86)/7-Zip/7z.exe").exists() else None)
+    )
+
+    if seven_zip:
+        info("Extracting ExifTool with 7-Zip...")
+        subprocess.run(
+            [str(seven_zip), "x", str(zip_file), f"-o{str(temp_dir)}", "-y"],
+            capture_output=True, check=False,
+        )
+    else:
+        info("Extracting ExifTool with Python zipfile...")
+        import zipfile
+        with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+            zip_ref.extractall(temp_dir)
+
+    # Find the main directory inside temp_dir and move contents
+    subdirs = [d for d in temp_dir.iterdir() if d.is_dir()]
+    if subdirs:
+        for item in subdirs[0].iterdir():
+            target = exiftool_dir / item.name
+            if target.exists():
+                if target.is_dir():
+                    shutil.rmtree(target)
+                else:
+                    target.unlink()
+            shutil.move(str(item), str(target))
+    else:
+        for item in temp_dir.iterdir():
+            target = exiftool_dir / item.name
+            if target.exists():
+                if target.is_dir():
+                    shutil.rmtree(target)
+                else:
+                    target.unlink()
+            shutil.move(str(item), str(target))
+
+    # Clean up temp_dir and zip
+    shutil.rmtree(temp_dir)
+    if zip_file.exists():
+        zip_file.unlink()
+        info("Removed ExifTool zip archive")
+
+    # Rename exiftool(-k).exe to exiftool.exe
+    exe_k = exiftool_dir / "exiftool(-k).exe"
+    if exe_k.exists():
+        shutil.move(str(exe_k), str(exiftool_dir / "exiftool.exe"))
+
+    exe = exiftool_dir / "exiftool.exe"
+    if exe.exists():
+        ok("ExifTool extracted and set up")
+    else:
+        warn("exiftool.exe not found — ExifTool metadata extraction will not work")
+
+
+def _setup_exiftool_unix(exiftool_dir: Path):
+    """Download Image-ExifTool-*.tar.gz, extract the exiftool Perl script + lib/."""
+    archive = DIST_DIR / f"Image-ExifTool-{EXIFTOOL_VERSION}.tar.gz"
+    if not archive.exists():
+        download_file(UNIX_EXIFTOOL_URL, archive)
+
+    import tarfile
+    info("Extracting ExifTool...")
+    with tarfile.open(archive, "r:gz") as tar:
+        tar.extractall(DIST_DIR)
+    archive.unlink()
+    info("Removed ExifTool tar.gz archive")
+
+    extracted = DIST_DIR / f"Image-ExifTool-{EXIFTOOL_VERSION}"
+    if extracted.is_dir():
+        for item in extracted.iterdir():
+            target = exiftool_dir / item.name
+            if target.exists():
+                if target.is_dir():
+                    shutil.rmtree(target)
+                else:
+                    target.unlink()
+            shutil.move(str(item), str(target))
+        shutil.rmtree(extracted)
+
+    # Ensure exiftool script has execute permission
+    exe = exiftool_dir / "exiftool"
+    if exe.exists():
+        exe.chmod(exe.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        ok("ExifTool extracted and set up")
+    else:
+        warn("exiftool not found — ExifTool metadata extraction will not work")
+
+
+def setup_exiftool_macos(exiftool_dir: Path):
+    _setup_exiftool_unix(exiftool_dir)
+
+
+def setup_exiftool_linux(exiftool_dir: Path):
+    _setup_exiftool_unix(exiftool_dir)
+
+
 def setup_tesseract_linux(tesseract_dir: Path):
     if ARCH not in LINUX_TESSERACT_URLS:
         fail(f"Unsupported architecture: {ARCH}")
@@ -300,6 +415,10 @@ def main():
         "--skip-overrides", action="store_true",
         help="Skip applying overrides/ directory",
     )
+    parser.add_argument(
+        "--skip-exiftool", action="store_true",
+        help="Skip downloading/bundling ExifTool",
+    )
     args = parser.parse_args()
 
     print("=" * 60)
@@ -347,6 +466,21 @@ def main():
 
             print()
             download_tessdata(tesseract_dir / "tessdata")
+
+        # Step 4: bundle ExifTool
+        if not args.skip_exiftool:
+            exiftool_dir = DIST_DIR / "exiftool"
+            exiftool_dir.mkdir(parents=True, exist_ok=True)
+
+            print()
+            if SYSTEM == "Windows":
+                setup_exiftool_windows(exiftool_dir)
+            elif SYSTEM == "Linux":
+                setup_exiftool_linux(exiftool_dir)
+            elif SYSTEM == "Darwin":
+                setup_exiftool_macos(exiftool_dir)
+            else:
+                warn(f"Unsupported platform: {SYSTEM}. ExifTool not bundled.")
 
         print_output_tree()
 

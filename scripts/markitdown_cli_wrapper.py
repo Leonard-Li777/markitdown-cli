@@ -51,6 +51,17 @@ if tesseract_exe:
             os.environ["TESSDATA_PREFIX"] = td
             break
 
+# --- ExifTool path setup ---
+_exiftool_exe_name = "exiftool.exe" if _is_win else "exiftool"
+_exiftool_candidates = [
+    os.path.join(_exe_dir, _exiftool_exe_name),
+    os.path.join(_exe_dir, "exiftool", _exiftool_exe_name),
+]
+for c in _exiftool_candidates:
+    if os.path.exists(c):
+        os.environ["EXIFTOOL_PATH"] = c
+        break
+
 # --- Plugin discovery fix for frozen builds ---
 if getattr(sys, 'frozen', False):
     import importlib.metadata as md
