@@ -415,6 +415,12 @@ class MarkItDown:
                     if not with_metadata and not metadata_only:
                         res.markdown = _strip_inline_metadata(res.markdown)
                     elif metadata_only:
+                        if self._exiftool_path:
+                            from .converters._exiftool import exiftool_metadata
+                            file_stream.seek(0)
+                            raw = exiftool_metadata(file_stream, exiftool_path=self._exiftool_path)
+                            if raw:
+                                res.metadata.update(raw)
                         md = _build_metadata_output(res)
                         res.markdown = md
 
