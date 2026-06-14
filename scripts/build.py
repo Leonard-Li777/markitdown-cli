@@ -197,27 +197,11 @@ def setup_exiftool_windows(exiftool_dir: Path):
         shutil.rmtree(temp_dir)
     temp_dir.mkdir(parents=True, exist_ok=True)
 
-    seven_zip = (
-        shutil.which("7z")
-        or shutil.which("7za")
-        or (Path("C:/Program Files/7-Zip/7z.exe") if Path("C:/Program Files/7-Zip/7z.exe").exists() else None)
-        or (Path("C:/Program Files (x86)/7-Zip/7z.exe") if Path("C:/Program Files (x86)/7-Zip/7z.exe").exists() else None)
-    )
-
-    if seven_zip:
-        info("Extracting ExifTool with 7-Zip...")
-        subprocess.run(
-            [str(seven_zip), "x", str(zip_file), f"-o{str(temp_dir)}", "-y"],
-            capture_output=True, check=False,
-        )
-    else:
-        info("Extracting ExifTool with Python zipfile...")
-        import zipfile
-        with zipfile.ZipFile(zip_file, 'r') as zip_ref:
-            zip_ref.extractall(temp_dir)
+    import zipfile
+    with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+        zip_ref.extractall(temp_dir)
 
     # Find the main directory inside temp_dir and move contents
-    subdirs = [d for d in temp_dir.iterdir() if d.is_dir()]
     if subdirs:
         for item in subdirs[0].iterdir():
             target = exiftool_dir / item.name
