@@ -202,6 +202,7 @@ def setup_exiftool_windows(exiftool_dir: Path):
         zip_ref.extractall(temp_dir)
 
     # Find the main directory inside temp_dir and move contents
+    subdirs = [d for d in temp_dir.iterdir() if d.is_dir()]
     if subdirs:
         for item in subdirs[0].iterdir():
             target = exiftool_dir / item.name
