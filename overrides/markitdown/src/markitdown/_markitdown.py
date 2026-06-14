@@ -417,8 +417,16 @@ class MarkItDown:
                     elif metadata_only:
                         if self._exiftool_path:
                             from .converters._exiftool import exiftool_metadata
-                            file_stream.seek(0)
-                            raw = exiftool_metadata(file_stream, exiftool_path=self._exiftool_path)
+                            local_path = None
+                            for si in stream_info_guesses:
+                                if si.local_path:
+                                    local_path = si.local_path
+                                    break
+                            if local_path:
+                                raw = exiftool_metadata(file_stream, exiftool_path=self._exiftool_path, file_path=local_path)
+                            else:
+                                file_stream.seek(0)
+                                raw = exiftool_metadata(file_stream, exiftool_path=self._exiftool_path)
                             if raw:
                                 res.metadata.update(raw)
                         md = _build_metadata_output(res)
