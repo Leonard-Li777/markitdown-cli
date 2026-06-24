@@ -27,6 +27,7 @@ import argparse
 import os
 import platform
 import shutil
+import ssl
 import stat
 import subprocess
 import sys
@@ -63,8 +64,8 @@ WINDOWS_TESSERACT_URL = (
 )
 
 EXIFTOOL_VERSION = "13.59"
-WINDOWS_EXIFTOOL_URL = f"https://exiftool.org/exiftool-{EXIFTOOL_VERSION}_64.zip"
-UNIX_EXIFTOOL_URL = f"https://exiftool.org/Image-ExifTool-{EXIFTOOL_VERSION}.tar.gz"
+WINDOWS_EXIFTOOL_URL = f"https://sourceforge.net/projects/exiftool/files/exiftool-{EXIFTOOL_VERSION}_64.zip/download"
+UNIX_EXIFTOOL_URL = f"https://sourceforge.net/projects/exiftool/files/Image-ExifTool-{EXIFTOOL_VERSION}.tar.gz/download"
 
 TESDATA_BASE = "https://github.com/tesseract-ocr/tessdata_fast/raw/main"
 TESSDATA_LANGS = ["eng", "chi_sim", "chi_tra"]
@@ -108,11 +109,27 @@ def restore_submodule():
 # ---------------------------------------------------------------------------
 # Download helpers
 # ---------------------------------------------------------------------------
-def download_file(url, dest):
+def download_file(url, dest, max_retries=3):
     info(f"Downloading {dest.name}...")
-    urllib.request.urlretrieve(url, dest)
-    size = dest.stat().st_size
-    ok(f"{dest.name} ({size // 1024} KB)")
+    for attempt in range(1, max_retries + 1):
+        try:
+            ctx = ssl.create_default_context()
+            req = urllib.request.Request(url, headers={"User-Agent": "MarkItDown-Build/1.0"})
+            with urllib.request.urlopen(req, context=ctx, timeout=120) as resp:
+                with open(dest, "wb") as f:
+                    shutil.copyfileobj(resp, f)
+            size = dest.stat().st_size
+            ok(f"{dest.name} ({size // 1024} KB)")
+            return
+        except Exception as e:
+            if dest.exists():
+                dest.unlink()
+            if attempt < max_retries:
+                warn(f"Download attempt {attempt}/{max_retries} failed: {e}. Retrying...")
+                import time
+                time.sleep(2 * attempt)
+            else:
+                raise
 
 
 def download_tessdata(tessdata_dir: Path):
