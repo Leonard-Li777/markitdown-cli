@@ -27,13 +27,7 @@ class AudioConverter(DocumentConverter):
 
         raw_meta = exiftool_metadata(file_stream, exiftool_path=kwargs.get("exiftool_path"))
         if raw_meta:
-            for f in ["Title", "Artist", "Author", "Band", "Album", "Genre", "Track",
-                       "DateTimeOriginal", "CreateDate", "NumChannels", "SampleRate",
-                       "AvgBytesPerSec", "BitsPerSample"]:
-                if f in raw_meta:
-                    meta[f] = raw_meta[f]
-                    if with_metadata:
-                        md_content += f"{f}: {raw_meta[f]}\n"
+            meta = raw_meta
 
         if stream_info.extension == ".wav" or stream_info.mimetype == "audio/x-wav":
             audio_format = "wav"

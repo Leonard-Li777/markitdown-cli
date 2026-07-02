@@ -31,10 +31,7 @@ class ImageConverter(DocumentConverter):
         raw_meta = exiftool_metadata(file_stream, exiftool_path=kwargs.get("exiftool_path"))
 
         if raw_meta:
-            for f in ["ImageSize", "Title", "Caption", "Description", "Keywords",
-                       "Artist", "Author", "DateTimeOriginal", "CreateDate", "GPSPosition"]:
-                if f in raw_meta:
-                    meta[f] = raw_meta[f]
+            meta = raw_meta
         else:
             try:
                 from PIL import Image
@@ -63,10 +60,7 @@ class ImageConverter(DocumentConverter):
                 pass
 
         if meta and with_metadata:
-            for f in ["ImageSize", "Title", "Caption", "Description", "Keywords",
-                       "Artist", "Author", "DateTimeOriginal", "CreateDate", "GPSPosition"]:
-                if f in meta:
-                    md_content += f"{f}: {meta[f]}\n"
+            md_content += "\n".join(f"{k}: {v}" for k, v in meta.items()) + "\n"
 
         llm_client = kwargs.get("llm_client")
         llm_model = kwargs.get("llm_model")

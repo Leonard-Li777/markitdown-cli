@@ -49,8 +49,9 @@ def extract_magika(file_bytes: bytes) -> dict:
     }
 
 
-def extract_metadata(file_path: str, file_bytes: bytes) -> dict:
-    """Extract basic file metadata."""
+def extract_metadata(file_path: str, file_bytes: bytes, **kwargs) -> dict:
+    """Extract file metadata — all keys from exiftool (if available), plus basic stats."""
+    ext = os.path.splitext(file_path)[1].lower()
     info = {"title": None, "author": None, "page_count": None,
             "file_size": len(file_bytes), "created": None, "modified": None}
     try:
@@ -65,7 +66,6 @@ def extract_metadata(file_path: str, file_bytes: bytes) -> dict:
     except (OSError, ValueError):
         pass
     # Try to get page count for PDFs
-    ext = os.path.splitext(file_path)[1].lower()
     if ext == ".pdf":
         try:
             import fitz
@@ -74,6 +74,16 @@ def extract_metadata(file_path: str, file_bytes: bytes) -> dict:
             doc.close()
         except Exception:
             pass
+    # Enrich with exiftool metadata (all keys, no filtering)
+    try:
+        exiftool_path = kwargs.get("exiftool_path")
+        if exiftool_path:
+            from .converters._exiftool import exiftool_metadata
+            raw = exiftool_metadata(file_bytes, exiftool_path=exiftool_path, file_path=file_path)
+            if raw:
+                info.update(raw)
+    except Exception:
+        pass
     return info
 
 
@@ -182,7 +192,7 @@ def extract_thumbnail(file_path: str, file_bytes: bytes,
 
 EXTRACTORS = {
     "magika":   lambda fp, fb, **kw: extract_magika(fb),
-    "metadata": lambda fp, fb, **kw: extract_metadata(fp, fb),
+    "metadata": lambda fp, fb, **kw: extract_metadata(fp, fb, **kw),
     "text":     lambda fp, fb, **kw: extract_text(fp, fb, **kw),
     "document": lambda fp, fb, **kw: extract_document(fp, fb, **kw),
     "ocr":      lambda fp, fb, **kw: extract_ocr(fp, fb, **kw),
