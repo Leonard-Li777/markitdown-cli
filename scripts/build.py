@@ -460,6 +460,10 @@ def main():
 
         # Step 3: bundle Tesseract into dist/markitdown/ (alongside _internal/)
         if not args.skip_tesseract:
+            # Ensure dist/markitdown is a directory (not a stale file from a failed build)
+            markitdown_dir = DIST_DIR / "markitdown"
+            if markitdown_dir.exists() and not markitdown_dir.is_dir():
+                markitdown_dir.unlink()
             tesseract_dir = DIST_DIR / "markitdown" / "tesseract"
             tesseract_dir.mkdir(parents=True, exist_ok=True)
 
