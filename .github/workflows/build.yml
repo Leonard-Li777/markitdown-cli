@@ -90,6 +90,8 @@ jobs:
     if: always() && fromJSON(inputs.create_release)
     needs: [select, build]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v5
         with:
