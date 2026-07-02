@@ -155,14 +155,13 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data)
 
+# EXE must have a name that doesn't collide with COLLECT on macOS/Linux
+# (on Windows, .exe suffix avoids the collision automatically)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
-    name='markitdown',
+    name='_markitdown_boot',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -176,4 +175,12 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    name='markitdown',
 )

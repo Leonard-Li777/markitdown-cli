@@ -375,10 +375,7 @@ def build_markitdown(onefile: bool):
         print(result.stderr[-2000:] if result.stderr else "", file=sys.stderr)
         result.check_returncode()
 
-    exe = DIST_DIR / ("markitdown.exe" if SYSTEM == "Windows" else "markitdown")
-    if not exe.exists():
-        # macOS onedir output is under the directory name
-        exe = DIST_DIR / "markitdown" / ("markitdown.exe" if SYSTEM == "Windows" else "markitdown")
+    exe = DIST_DIR / "markitdown" / ("_markitdown_boot.exe" if SYSTEM == "Windows" else "_markitdown_boot")
     if exe.exists():
         ok(f"Executable: {exe} ({exe.stat().st_size // (1024*1024)} MB)")
     else:
@@ -512,6 +509,13 @@ def main():
                         target.unlink()
                 shutil.move(str(item), str(DIST_DIR))
             shutil.rmtree(str(app_dir), ignore_errors=True)
+
+            # Rename _markitdown_boot → markitdown (or .exe on Windows)
+            boot = DIST_DIR / ("_markitdown_boot.exe" if SYSTEM == "Windows" else "_markitdown_boot")
+            final = DIST_DIR / ("markitdown.exe" if SYSTEM == "Windows" else "markitdown")
+            if boot.exists():
+                shutil.move(str(boot), str(final))
+                ok("Renamed _markitdown_boot → markitdown")
             ok("Flattened dist/markitdown/ → dist/")
 
         print_output_tree()
