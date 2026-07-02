@@ -136,53 +136,19 @@ def extract_ocr(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str]
                 ocr_lang: str = "eng+chi_sim", **kwargs) -> str:
     """Extract text with OCR enabled.
 
-    If ``_pre_pdf`` is provided, run pure Tesseract on each PDF page
-    (render → OCR) without the full markitdown pipeline.
+    If ``_pre_pdf`` is provided, reuse it directly instead of going through
+    LibreOffice again. Routes via the full markitdown OCR pipeline
+    (PdfConverterWithOCR) which adds ``*[Image OCR]*`` markers, page headers,
+    and interleaves extracted text with OCR'd image text — producing output
+    distinct from extract_document's non-OCR pipeline.
     """
     if "_pre_pdf" in kwargs:
-        pdf_bytes = kwargs["_pre_pdf"]
-        try:
-            import fitz
-            from markitdown_ocr._tesseract_service import TesseractOCRService
-            svc = TesseractOCRService(
-                tesseract_path=kwargs.get("tesseract_path"),
-                lang=ocr_lang,
-            )
-            if not svc.available:
-                return ""
-            from io import BytesIO
-            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-            pages = None
-            if pages_spec_str:
-                from ._page_range import parse_pages, resolve
-                spec = parse_pages(pages_spec_str)
-                if spec:
-                    pages = resolve(spec, doc.page_count)
-            texts = []
-            for i in range(doc.page_count):
-                if pages is None or (i + 1) in pages:
-                    try:
-                        pix = doc[i].get_pixmap(dpi=300)
-                        img_bytes = pix.tobytes("png")
-                        result = svc.extract_text(io.BytesIO(img_bytes))
-                        if result.text:
-                            texts.append(result.text)
-                    except Exception:
-                        pass
-            doc.close()
-            return "\n\n".join(texts)
-        except ImportError:
-            # TesseractOCRService not available — fallback to markitdown pipeline
-            pass
-        except Exception:
-            pass
-        # Fallback: route via markitdown PDF converter with OCR
         from ._router import route_document
         extra = {"ocr_engine": "tesseract", "tesseract_lang": ocr_lang}
         extra.update({k: v for k, v in kwargs.items() if k in ("tesseract_path", "ocr_engine")})
         return route_document(
             file_path=file_path,
-            file_bytes=pdf_bytes,
+            file_bytes=kwargs["_pre_pdf"],
             extension=".pdf",
             enable_ocr=True,
             pages_spec_str=pages_spec_str,
