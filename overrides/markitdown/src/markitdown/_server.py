@@ -301,7 +301,10 @@ def run_server(host: str = "127.0.0.1", port: int = 5052,
     server._uptime = 0
 
     # Print port for consumers (first line = PORT=xxxxx)
-    print(f"PORT={port}")
+    # flush=True: in non-TTY environments stdout is block-buffered, so without
+    # an explicit flush the PORT= line may never reach the consumer before
+    # serve_forever() blocks indefinitely.
+    print(f"PORT={port}", flush=True)
     print(f"[{__import__('datetime').datetime.now():%Y-%m-%d %H:%M:%S}] "
           f"Server started on http://{host}:{port}")
 

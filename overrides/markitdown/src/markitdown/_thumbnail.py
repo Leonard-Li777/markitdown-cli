@@ -11,15 +11,16 @@ class ThumbnailError(Exception):
 
 
 _OFFICE_EXTS = {".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".odt", ".odp", ".ods"}
-_LIBREOFFICE_NAMES = ["libreoffice", "soffice"]
 _IMG_FORMATS = {"png", "jpeg", "jpg", "webp"}
 
 
-def _find_libreoffice():
-    for name in _LIBREOFFICE_NAMES:
-        path = shutil.which(name)
-        if path:
-            return path
+def _find_libreoffice() -> str | None:
+    """Locate LibreOffice using the comprehensive detection module."""
+    try:
+        from ._libreoffice_detect import findLibreOfficePath
+        return findLibreOfficePath()
+    except (ImportError, FileNotFoundError):
+        pass
     return None
 
 
@@ -37,6 +38,14 @@ def _normalize_fmt(fmt: str) -> str:
 def extract_thumbnails(file_path: str, pages_spec=None, dpi: int = 150, fmt: str = "png") -> dict[int, bytes]:
     fmt = _normalize_fmt(fmt)
     ext = os.path.splitext(file_path)[1].lower()
+
+    # Parse string pages_spec (e.g. "1", "1-3") into a set of ints
+    if isinstance(pages_spec, str):
+        from ._page_range import parse_pages, resolve
+        parsed = parse_pages(pages_spec)
+        # resolve needs total page count — we don't have it yet, so keep raw
+        # and resolve at the per-format handler
+        pages_spec = parsed
 
     if ext == ".pdf":
         return _pdf_thumbnails(file_path, pages_spec, dpi, fmt)

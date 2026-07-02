@@ -156,24 +156,24 @@ def extract_html(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str
 
 
 def extract_thumbnail(file_path: str, file_bytes: bytes,
-                      fmt: str = "png", dpi: int = 150) -> Optional[bytes]:
-    """Extract first-page thumbnail as raw image bytes."""
+                      fmt: str = "png", dpi: int = 150):
+    """Extract first-page thumbnail as raw image bytes.
+
+    Returns raw bytes on success, or a dict ``{"error": "..."}`` on failure.
+    """
     try:
         images = extract_thumbnails(
             file_path=file_path,
-            file_bytes=file_bytes,
-            pages="1",
+            pages_spec="1",
             fmt=fmt,
             dpi=dpi,
         )
         if images:
-            with open(images[0], "rb") as f:
-                data = f.read()
-            os.remove(images[0])
-            return data
-    except Exception:
-        pass
-    return None
+            key = 1 if 1 in images else next(iter(images))
+            return images[key]
+        return {"error": "extract_thumbnails returned empty"}
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
 
 
 # ---------------------------------------------------------------------------
@@ -307,7 +307,7 @@ def run_extraction(
             try:
                 value = future.result()
             except Exception as e:
-                value = {"error": str(e)}
+                value = {"error": f"Thread '{name}': {type(e).__name__}: {e}"}
 
             if name == "magika":
                 magika_data = value
