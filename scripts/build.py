@@ -490,6 +490,20 @@ def main():
             shutil.copy2(str(render_src), str(DIST_DIR / "markitdown" / "render_page.py"))
             ok("render_page.py copied")
 
+        # Step 6: flatten — move everything from dist/markitdown/ up to dist/
+        app_dir = DIST_DIR / "markitdown"
+        if app_dir.is_dir():
+            for item in app_dir.iterdir():
+                target = DIST_DIR / item.name
+                if target.exists():
+                    if target.is_dir():
+                        shutil.rmtree(target, ignore_errors=True)
+                    else:
+                        target.unlink()
+                shutil.move(str(item), str(DIST_DIR))
+            shutil.rmtree(str(app_dir), ignore_errors=True)
+            ok("Flattened dist/markitdown/ → dist/")
+
         print_output_tree()
 
         print()

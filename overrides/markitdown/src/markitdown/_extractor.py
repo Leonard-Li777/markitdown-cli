@@ -100,7 +100,6 @@ def extract_document(file_path: str, file_bytes: bytes, pages_spec_str: Optional
     """
     if "_pre_pdf" in kwargs:
         # Reuse the pre-converted PDF — route as PDF without OCR
-        from ._router import route_document
         return route_document(
             file_path=file_path,
             file_bytes=kwargs["_pre_pdf"],

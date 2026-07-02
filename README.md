@@ -34,8 +34,8 @@ python scripts/build.py
 构建产物输出到 `dist/`：
 
 ```
-dist/markitdown/            ← onedir 目录（自包含，不依赖系统环境）
-├── markitdown.exe          启动器
+dist/            ← 自包含，不依赖系统环境
+├── markitdown.exe
 ├── _internal/              Python 依赖与运行时
 ├── tesseract/              便携版 Tesseract OCR
 │   ├── tesseract.exe
