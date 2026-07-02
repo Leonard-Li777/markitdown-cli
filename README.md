@@ -350,8 +350,10 @@ Content-Type: application/json
 
 {
     "file_path": "/path/to/document.pdf",
-    "extract": ["text", "ocr", "metadata"],
-    "pages": "1-3"
+    "extract": ["text", "ocr", "metadata", "thumbnail"],
+    "pages": "1-3",
+    "thumbnail_out": "/tmp/thumbnail.webp",
+    "text_out": "/tmp/output.md"
 }
 ```
 
@@ -359,11 +361,19 @@ Content-Type: application/json
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|:----:|------|
-| `file` | file | ✅ | 上传文件 |
-| `extract` | string | ✅ | 逗号分隔：`text,document,ocr,html,metadata,magika,thumbnail` |
+| `file_path` | string | ✅ | 文件路径（JSON 模式） |
+| `file` | file | ✅ | 上传文件（multipart 模式） |
+| `extract` | string/array | ✅ | 逗号分隔或数组：`text,document,ocr,html,metadata,magika,thumbnail` |
 | `pages` | string | 否 | 页码（仅影响 text/document/ocr/html） |
 | `ocr_lang` | string | 否 | 默认 `"eng+chi_sim"` |
 | `thumbnail_format` | string | 否 | `"png"` / `"jpg"` / `"webp"`，默认 `"png"` |
+| `thumbnail_out` | string | 否 | 缩略图文件写出路径（JSON 响应中不再内联 data） |
+| `text_out` | string | 否 | 文本内容写出路径 |
+| `document_out` | string | 否 | 文档 Markdown 写出路径 |
+| `ocr_out` | string | 否 | OCR 结果写出路径 |
+| `html_out` | string | 否 | HTML 写出路径 |
+| `metadata_out` | string | 否 | 元数据 JSON 写出路径 |
+| `magika_out` | string | 否 | magika 结果 JSON 写出路径 |
 
 **Response**：
 
