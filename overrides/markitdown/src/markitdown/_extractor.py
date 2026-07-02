@@ -123,6 +123,7 @@ def extract_document(file_path: str, file_bytes: bytes, pages_spec_str: Optional
             pages_spec_str=pages_spec_str,
         )
     ext = os.path.splitext(file_path)[1].lower()
+    from ._router import route_document
     return route_document(
         file_path=file_path,
         file_bytes=file_bytes,
