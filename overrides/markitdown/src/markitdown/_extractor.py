@@ -105,11 +105,24 @@ def extract_document(file_path: str, file_bytes: bytes, pages_spec_str: Optional
                      enable_ocr: bool = False, **kwargs) -> str:
     """Extract markdown text from PDF/Office documents.
 
-    If ``_pre_pdf`` is provided (pre-converted PDF bytes from a sibling
-    ``ocr`` extraction), reuse it instead of running native extraction.
+    ``_pre_pdf`` is NOT consumed here for Office formats — native extraction
+    (python-pptx, mammoth, openpyxl) is always preferred so document and ocr
+    outputs remain distinct.
     """
+    ext = os.path.splitext(file_path)[1].lower()
+    office_exts = {".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".odt", ".odp", ".ods"}
+    if ext in office_exts:
+        # Always use native extraction for Office files; _pre_pdf is for OCR only
+        return route_document(
+            file_path=file_path,
+            file_bytes=file_bytes,
+            extension=ext,
+            enable_ocr=enable_ocr,
+            pages_spec_str=pages_spec_str,
+            **kwargs
+        )
+    # For PDF (or other formats), reuse _pre_pdf if available
     if "_pre_pdf" in kwargs:
-        # Reuse the pre-converted PDF — route as PDF without OCR
         return route_document(
             file_path=file_path,
             file_bytes=kwargs["_pre_pdf"],
@@ -117,7 +130,6 @@ def extract_document(file_path: str, file_bytes: bytes, pages_spec_str: Optional
             enable_ocr=False,
             pages_spec_str=pages_spec_str,
         )
-    ext = os.path.splitext(file_path)[1].lower()
     return route_document(
         file_path=file_path,
         file_bytes=file_bytes,
