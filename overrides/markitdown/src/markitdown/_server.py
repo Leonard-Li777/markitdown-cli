@@ -14,6 +14,7 @@ import io
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 import uuid
@@ -21,7 +22,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from typing import Optional
 
-from ._extractor import run_extraction
+from ._extractor import extract_to_json
 
 
 # ---------------------------------------------------------------------------
@@ -203,6 +204,22 @@ class _Handler(BaseHTTPRequestHandler):
             tmp_path = tmp.name
 
         try:
+            # Auto-detect exiftool path
+            exiftool_path = None
+            for candidate in ["dist\\exiftool\\exiftool.exe",
+                              "exiftool",
+                              "C:\\Program Files\\exiftool\\exiftool.exe"]:
+                found = shutil.which(candidate) if "/" not in candidate and "\\" not in candidate else (
+                    candidate if os.path.isfile(candidate) else None
+                )
+                if found:
+                    exiftool_path = os.path.abspath(found)
+                    break
+            if exiftool_path is None:
+                env_path = os.environ.get("EXIFTOOL_PATH")
+                if env_path:
+                    exiftool_path = env_path
+
             output_paths = {}
             for key, val in [("text", text_out), ("document", document_out),
                              ("ocr", ocr_out), ("html", html_out),
@@ -210,13 +227,14 @@ class _Handler(BaseHTTPRequestHandler):
                              ("thumbnail", thumbnail_out)]:
                 if val:
                     output_paths[key] = val
-            result = run_extraction(
+            result = extract_to_json(
                 file_path=tmp_path,
                 file_bytes=file_bytes,
                 extract_list=extract_list,
                 pages_spec_str=pages,
                 ocr_lang=ocr_lang,
                 thumbnail_format=thumb_fmt,
+                exiftool_path=exiftool_path,
                 output_paths=output_paths if output_paths else None,
             )
             result["file"]["name"] = file_name

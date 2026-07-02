@@ -219,6 +219,7 @@ def run_extraction(
     pages_spec_str: Optional[str] = None,
     ocr_lang: str = "eng+chi_sim",
     thumbnail_format: str = "png",
+    exiftool_path: Optional[str] = None,
     max_workers: int = 4,
 ) -> dict:
     """
@@ -252,6 +253,8 @@ def run_extraction(
         "ocr_lang": ocr_lang,
         "thumbnail_format": thumbnail_format,
     }
+    if exiftool_path:
+        kwargs["exiftool_path"] = exiftool_path
 
     # Determine file group via magika and filter incompatible indicators
     file_group = "unknown"
@@ -379,6 +382,7 @@ def extract_to_json(
     pages_spec_str: Optional[str] = None,
     ocr_lang: str = "eng+chi_sim",
     thumbnail_format: str = "png",
+    exiftool_path: Optional[str] = None,
     output_paths: Optional[dict[str, str]] = None,
     max_workers: int = 4,
 ) -> dict:
@@ -394,6 +398,7 @@ def extract_to_json(
         pages_spec_str=pages_spec_str,
         ocr_lang=ocr_lang,
         thumbnail_format=thumbnail_format,
+        exiftool_path=exiftool_path,
         max_workers=max_workers,
     )
 
