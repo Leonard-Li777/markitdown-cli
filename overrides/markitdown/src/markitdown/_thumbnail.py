@@ -51,7 +51,18 @@ def extract_thumbnails(file_path: str, pages_spec=None, dpi: int = 150, fmt: str
         return _pdf_thumbnails(file_path, pages_spec, dpi, fmt)
 
     if ext in _OFFICE_EXTS:
-        # Priority: win32com (Windows + Office) > LibreOffice > embedded
+        # Priority: embedded thumbnail (fast, no extra tool) > win32com > LO
+        if ext == ".pptx":
+            try:
+                return _pptx_embedded_thumbnail(file_path)
+            except ThumbnailError:
+                pass
+        if ext == ".docx":
+            try:
+                return _docx_embedded_thumbnail(file_path)
+            except ThumbnailError:
+                pass
+
         if ext == ".pptx":
             try:
                 return _pptx_via_win32com(file_path, pages_spec, fmt)
@@ -62,10 +73,6 @@ def extract_thumbnails(file_path: str, pages_spec=None, dpi: int = 150, fmt: str
         if lo:
             return _office_thumbnails_via_lo(file_path, pages_spec, dpi, fmt, lo)
 
-        if ext == ".pptx":
-            return _pptx_embedded_thumbnail(file_path)
-        if ext == ".docx":
-            return _docx_embedded_thumbnail(file_path)
         raise ThumbnailError(
             f"No embedded image found and no renderer available. "
             f"Install LibreOffice (https://libreoffice.org) or Microsoft Office."

@@ -325,13 +325,15 @@ def run_extraction(
     filtered_extract = [i for i in extract_list if i not in skip_indicators]
     results["extract"] = filtered_extract  # report what was actually processed
 
-    # Optimisation: when both document and ocr are requested on an Office
-    # file, pre-convert to PDF once and reuse the result for both indicators.
-    # This avoids running LibreOffice twice.
+    # Optimisation: when OCR is requested on an Office file, pre-convert to
+    # PDF once and reuse for OCR, document (text extraction via PDF), and
+    # thumbnail (first-page render).  Without OCR, native extraction is used
+    # for all indicators — no LibreOffice needed, full content is returned
+    # regardless of --pages (native converters don't support page selection).
     ext = os.path.splitext(file_path)[1].lower()
     office_exts = {".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".odt", ".odp", ".ods"}
     pre_pdf: bytes | None = None
-    needs_lo = ("document" in extract_list or "ocr" in extract_list or "html" in extract_list)
+    needs_lo = "ocr" in extract_list
     if ext in office_exts and needs_lo:
         try:
             from ._pdf_output import office_to_pdf
