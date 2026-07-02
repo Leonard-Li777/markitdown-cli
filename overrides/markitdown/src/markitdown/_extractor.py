@@ -267,20 +267,36 @@ def run_extraction(
 
     # Determine file group via magika and filter incompatible indicators
     file_group = "unknown"
+    file_is_text = False
     try:
         m = _get_magika()
         r = m.identify_bytes(file_bytes)
         file_group = r.output.group
+        file_is_text = r.output.is_text
     except Exception:
         pass
 
-    # Filter extract_list: only keep indicators compatible with this file's group
-    _indicator_alias = {}
-    for ind in extract_list:
-        if ind == "text" and file_group != "text":
-            _indicator_alias[ind] = "document"
-        elif ind == "document" and file_group == "text":
-            _indicator_alias[ind] = "text"
+    # Build set of indicators to skip based on file type
+    skip_indicators: set[str] = set()
+    if not file_is_text:
+        # Non-text files (binary): skip text, document, ocr
+        for skip in ("text", "document", "ocr"):
+            if skip in extract_list:
+                skip_indicators.add(skip)
+    else:
+        # Text files: skip document if group != "document"
+        if file_group != "document" and "document" in extract_list:
+            skip_indicators.add("document")
+        # Skip text if group != "text"
+        if file_group != "text" and "text" in extract_list:
+            skip_indicators.add("text")
+    # Thumbnail only makes sense for document-type files
+    if file_group != "document" and "thumbnail" in extract_list:
+        skip_indicators.add("thumbnail")
+
+    # Filter extract_list for logging
+    filtered_extract = [i for i in extract_list if i not in skip_indicators]
+    results["extract"] = filtered_extract  # report what was actually processed
 
     # Optimisation: when both document and ocr are requested on an Office
     # file, pre-convert to PDF once and reuse the result for both indicators.
@@ -312,7 +328,7 @@ def run_extraction(
         kwargs["_pre_pdf"] = pre_pdf
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         future_map = {}
-        for name in extract_list:
+        for name in filtered_extract:
             extract_fn = EXTRACTORS.get(name)
             if extract_fn:
                 future = pool.submit(extract_fn, file_path, file_bytes, **kwargs)
