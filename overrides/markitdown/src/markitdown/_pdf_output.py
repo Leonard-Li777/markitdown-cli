@@ -107,14 +107,8 @@ def _convert_to_pdf(file_path: str, outdir: str, pages_spec: set[int] | None = N
                 f.write(pdf_bytes)
             return out_path
 
-        # UNO failed → decide fallback based on format
-        if ext in (".pptx", ".ppt"):
-            # PPTX: empty result (UNO is the only fast path)
-            raise PdfConversionError(
-                "LibreOffice UNO renderer unavailable for PPTX. "
-                "Install LibreOffice or use non-OCR mode."
-            )
-        # Other formats: fall through to CLI path
+        # UNO failed → fall through to CLI path (for all formats, including PPTX)
+        # The CLI does a full conversion; page filtering happens in office_to_pdf
 
     # ---- CLI fallback (LibreOffice --convert-to pdf) ----
     lo = _find_libreoffice()
