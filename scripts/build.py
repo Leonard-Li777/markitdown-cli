@@ -357,8 +357,9 @@ def build_markitdown(onefile: bool):
             warn(f"Skipping {name} — no pyproject.toml at {pkg_path}")
             continue
         subprocess.run(
-            [sys.executable, "-m", "pip", "install", "-e", str(pkg_path)],
-            check=False, capture_output=True,
+            [sys.executable, "-m", "pip", "install", "-e", str(pkg_path),
+             "--no-deps", "--no-build-isolation"],
+            check=False, capture_output=True, timeout=60,
         )
         ok(f"{name} installed from submodule")
 
