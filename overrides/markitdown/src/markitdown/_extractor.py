@@ -84,7 +84,8 @@ def extract_metadata(file_path: str, file_bytes: bytes, **kwargs) -> dict:
                 info.update(raw)
     except Exception:
         pass
-    return info
+    # Strip keys whose value is None
+    return {k: v for k, v in info.items() if v is not None}
 
 
 def extract_text(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str] = None,
