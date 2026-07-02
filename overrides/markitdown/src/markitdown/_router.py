@@ -39,14 +39,13 @@ def route_document(
                     **kwargs
                 )
             except Exception as e:
-                # Graceful fallback: if LibreOffice is not installed or conversion fails,
-                # fall back to direct non-OCR extraction (still useful for text-based Office files)
                 import warnings
                 warnings.warn(
                     f"OCR conversion failed for Office file ({type(e).__name__}: {e}). "
-                    f"Falling back to direct non-OCR text extraction.",
+                    f"Returning empty OCR result.",
                     RuntimeWarning
                 )
+                return ""
         elif ext == ".xlsx" and file_size_mb > 20:
             # For non-OCR large spreadsheets, use lightweight streaming to prevent memory blow-up
             return lightweight_xlsx_text_extract(file_bytes)
