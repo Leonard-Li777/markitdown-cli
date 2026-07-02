@@ -126,8 +126,14 @@ class _Handler(BaseHTTPRequestHandler):
             extract_str = body.get("extract", "")
             pages = body.get("pages")
             ocr_lang = body.get("ocr_lang", "eng+chi_sim")
-            thumb_fmt = body.get("thumbnail_format", "png")
+            thumb_fmt = body.get("thumbnail_format")
+            # Auto-detect format from thumbnail_out extension if not explicitly set
             thumbnail_out = body.get("thumbnail_out")
+            if not thumb_fmt and thumbnail_out:
+                ext_map = {".png": "png", ".jpg": "jpg", ".jpeg": "jpg", ".webp": "webp", ".bmp": "bmp", ".tiff": "tiff", ".tif": "tiff", ".gif": "gif"}
+                thumb_fmt = ext_map.get(os.path.splitext(thumbnail_out)[1].lower(), "png")
+            if not thumb_fmt:
+                thumb_fmt = "png"
             text_out = body.get("text_out")
             document_out = body.get("document_out")
             ocr_out = body.get("ocr_out")
