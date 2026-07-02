@@ -45,7 +45,7 @@ def extract_magika(file_bytes: bytes) -> dict:
         "mime_type": result.output.mime_type,
         "description": result.output.description,
         "group": result.output.group,
-        "score": result.output.score,
+        "score": result.score,
         "extensions": result.output.extensions,
         "is_text": result.output.is_text,
     }
