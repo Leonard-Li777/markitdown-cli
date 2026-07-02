@@ -116,8 +116,11 @@ def _convert_to_pdf(file_path: str, outdir: str, pages_spec: set[int] | None = N
         [lo, "--headless", "--convert-to", "pdf", "--outdir", outdir, file_path],
     )
     if result.returncode != 0:
+        stderr = result.stderr.strip()
+        stdout = result.stdout.strip()
+        detail = stderr or stdout or "(no output)"
         raise PdfConversionError(
-            f"LibreOffice conversion failed:\n{result.stderr.strip()}"
+            f"LibreOffice conversion failed (exit code {result.returncode}):\n{detail}"
         )
     expected = os.path.join(outdir, os.path.splitext(os.path.basename(file_path))[0] + ".pdf")
     if not os.path.exists(expected):
