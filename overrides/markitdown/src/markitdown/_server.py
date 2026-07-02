@@ -126,6 +126,7 @@ class _Handler(BaseHTTPRequestHandler):
             pages = body.get("pages")
             ocr_lang = body.get("ocr_lang", "eng+chi_sim")
             thumb_fmt = body.get("thumbnail_format", "png")
+            thumbnail_out = body.get("thumbnail_out")
 
             if isinstance(extract_str, list):
                 extract_str = ",".join(extract_str)
@@ -160,6 +161,7 @@ class _Handler(BaseHTTPRequestHandler):
             pages = fields.get("pages")
             ocr_lang = fields.get("ocr_lang", "eng+chi_sim")
             thumb_fmt = fields.get("thumbnail_format", "png")
+            thumbnail_out = fields.get("thumbnail_out")
 
             if not file_data:
                 self._send_error(400, "No file uploaded")
@@ -189,6 +191,9 @@ class _Handler(BaseHTTPRequestHandler):
             tmp_path = tmp.name
 
         try:
+            output_paths = {}
+            if thumbnail_out:
+                output_paths["thumbnail"] = thumbnail_out
             result = run_extraction(
                 file_path=tmp_path,
                 file_bytes=file_bytes,
@@ -196,6 +201,7 @@ class _Handler(BaseHTTPRequestHandler):
                 pages_spec_str=pages,
                 ocr_lang=ocr_lang,
                 thumbnail_format=thumb_fmt,
+                output_paths=output_paths if output_paths else None,
             )
             result["file"]["name"] = file_name
             self._send_json(result)
