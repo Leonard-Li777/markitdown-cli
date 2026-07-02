@@ -157,6 +157,32 @@ def extract_ocr(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str]
             pages_spec_str=pages_spec_str,
             **extra,
         )
+    # Image files: OCR directly with Tesseract
+    image_exts = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".tif", ".avif"}
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext in image_exts:
+        try:
+            from markitdown_ocr._tesseract_service import TesseractOCRService
+            from PIL import Image as PILImage
+            import io
+            svc = TesseractOCRService(
+                tesseract_path=kwargs.get("tesseract_path"),
+                lang=ocr_lang,
+            )
+            if not svc.available:
+                return ""
+            img = PILImage.open(io.BytesIO(file_bytes))
+            # Convert to RGB if needed (RGBA → RGB for jpg/webp output compatibility)
+            if img.mode not in ("L", "RGB"):
+                img = img.convert("RGB")
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            buf.seek(0)
+            result = svc.extract_text(buf)
+            return result.text or ""
+        except ImportError:
+            # TesseractOCRService not available
+            return ""
     kwargs["ocr_engine"] = "tesseract"
     kwargs["tesseract_lang"] = ocr_lang
     return extract_text(file_path, file_bytes, pages_spec_str, enable_ocr=True, **kwargs)
@@ -277,17 +303,18 @@ def run_extraction(
         pass
 
     # Build set of indicators to skip based on file type
+    image_exts = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".tif", ".avif"}
     skip_indicators: set[str] = set()
-    if not file_is_text:
-        # Non-text files (binary): skip text, document, ocr
-        for skip in ("text", "document", "ocr"):
+    if file_group != "document":
+        # Non-document files: skip text + document
+        for skip in ("text", "document"):
             if skip in extract_list:
                 skip_indicators.add(skip)
+        # Keep ocr for images; skip for other non-document types (audio, video, etc.)
+        if ext not in image_exts and "ocr" in extract_list:
+            skip_indicators.add("ocr")
     else:
-        # Text files: skip document if group != "document"
-        if file_group != "document" and "document" in extract_list:
-            skip_indicators.add("document")
-        # Skip text if group != "text"
+        # Document files: skip text if not text group
         if file_group != "text" and "text" in extract_list:
             skip_indicators.add("text")
     # Thumbnail only makes sense for document-type files
