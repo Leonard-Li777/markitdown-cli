@@ -6,10 +6,12 @@
 
 ```
 markitdown/              git submodule — 上游源码
-overrides/               自定义补丁（ocr、thumbnail、html、pdf、router）
+overrides/               自定义补丁（ocr、thumbnail、html、pdf、router、extractor、server）
 scripts/
   build.py               跨平台构建脚本
   markitdown_cli_wrapper.py  PyInstaller 入口
+  render_page.py         UNO 逐页渲染脚本（由 LO 内置 Python 执行）
+  probe_uno.py           UNO listener 探活脚本
 markitdown.spec          PyInstaller 配置
 ```
 
@@ -32,15 +34,15 @@ python scripts/build.py
 构建产物输出到 `dist/`：
 
 ```
-dist/
-├── markitdown.exe        单文件可执行
-└── tesseract/            便携版 Tesseract OCR
-    ├── tesseract.exe
-    ├── *.dll
-    └── tessdata/
-        ├── eng.traineddata
-        ├── chi_sim.traineddata
-        └── chi_tra.traineddata
+dist/markitdown/            ← onedir 目录（自包含，不依赖系统环境）
+├── markitdown.exe          启动器
+├── _internal/              Python 依赖与运行时
+├── tesseract/              便携版 Tesseract OCR
+│   ├── tesseract.exe
+│   ├── *.dll
+│   └── tessdata/ (eng, chi_sim, chi_tra)
+├── exiftool/               ExifTool 元数据
+└── render_page.py          UNO 逐页渲染脚本
 ```
 
 ### 构建选项
@@ -216,8 +218,9 @@ markitdown document.pdf \
 
 | 值 | 说明 | 对应 `--xxx-out` | 无 `--xxx-out` 时 |
 |:---|------|:-----------------:|:-----------------:|
-| `text` | Markdown 文本 | `--text-out FILE` | 内联 `result.text.content` |
-| `ocr` | OCR 识别文本 | `--ocr-out FILE` | 内联 `result.ocr.content` |
+| `text` | 纯文本文件（magika group: `text`，如 `.txt` `.csv` `.html`） | `--text-out FILE` | 内联 `result.text.content` |
+| `document` | PDF / Office 文档（magika group: `document`） | `--document-out FILE` | 内联 `result.document.content` |
+| `ocr` | OCR 识别文本（**自动启用 OCR**，无需额外 `--use-ocr`） | `--ocr-out FILE` | 内联 `result.ocr.content` |
 | `html` | HTML 转换 | `--html-out FILE` | 内联 `result.html.content` |
 | `metadata` | 文件元数据 | `--metadata-out FILE` | 内联 `metadata` |
 | `magika` | magika 文件类型识别 | `--magika-out FILE` | 内联 `magika` |
@@ -252,12 +255,16 @@ markitdown document.pdf \
                 ┌──────────┐
                 │ file_bytes│
                 └────┬─────┘
-        ┌───────┬───┼───┬───────┬───────┐
-        ▼       ▼   ▼   ▼       ▼       ▼
-    magika  meta  thumb text   ocr     html
-    (0.01s) (0.1)(0.5) (1.3) (7.2s)  (1.3s)
-        └───────┴───┴───┴───────┴───────┘
-                    总耗时 ≈ max(...) = 7.2s
+        ┌───────┬───┼───┬───────┬───────┬───────┐
+        ▼       ▼   ▼   ▼       ▼       ▼       ▼
+    magika  meta  thumb text   doc     ocr     html
+    (0.01s) (0.1)(0.5) (1.3) (1.3)  (4~10s) (1.3s)
+        └───────┴───┴───┴───────┴───────┴───────┘
+                    总耗时 ≈ max(...) = 4~10s
+
+优化：当 `document` + `ocr` 同时请求时，LO 仅运行一次，
+预渲染的 PDF 在两者间共享，`document` 从 PDF 提取文本
+（跳过原生提取，节省 ~1.3s）。
 ```
 
 ## Server 模式
@@ -275,10 +282,18 @@ markitdown server --port-file /tmp/port.txt  # 端口号写入文件
 
 | 组件 | 策略 |
 |------|------|
-| LibreOffice | UNO pipe 后台进程，首次调用后保持 |
+| LibreOffice | UNO socket listener（端口 2083），`atexit` 自动清理 |
+| LO 逐页渲染 | **PPTX 部分页面**时通过 `render_page.py`（LO 内置 Python）按需渲染，跳过全量转换 |
 | Tesseract | `TesseractOCRService` 单例 |
 | magika | `Magika()` 单例，模型常驻 |
 | MarkItDown | 实例复用 |
+
+> **PPTX OCR 第 1 页性能对比**：
+> - CLI `--convert-to pdf`（全量 42 页）：**~10.3s**
+> - UNO 逐页渲染（仅第 1 页）：**~6.3s**（-39%）
+> - listener 已预热后：**~3.5s**（-66%）
+>
+> 当 UNO 不可用时，PPTX 直接返回空（避免 CLI 全量渲染的 10s 开销），其他格式降级到 CLI 模式。
 
 ### 端口号获取
 
@@ -325,13 +340,28 @@ markitdown server --port-file /tmp/markitdown.port
 
 #### `POST /extract`
 
-`multipart/form-data`
+支持两种请求方式：
+
+**方式 A — JSON 模式（本地调用，推荐）**：
+
+```json
+POST /extract
+Content-Type: application/json
+
+{
+    "file_path": "/path/to/document.pdf",
+    "extract": ["text", "ocr", "metadata"],
+    "pages": "1-3"
+}
+```
+
+**方式 B — `multipart/form-data`（远程上传）**：
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|:----:|------|
 | `file` | file | ✅ | 上传文件 |
-| `extract` | string | ✅ | 逗号分隔：`text,ocr,metadata,magika,thumbnail,html` |
-| `pages` | string | 否 | 页码（仅影响 text/ocr/html） |
+| `extract` | string | ✅ | 逗号分隔：`text,document,ocr,html,metadata,magika,thumbnail` |
+| `pages` | string | 否 | 页码（仅影响 text/document/ocr/html） |
 | `ocr_lang` | string | 否 | 默认 `"eng+chi_sim"` |
 | `thumbnail_format` | string | 否 | `"png"` / `"jpg"` / `"webp"`，默认 `"png"` |
 
@@ -394,27 +424,29 @@ markitdown server --port-file /tmp/markitdown.port
     "size": 1048576,
     "pages": 10
   },
-  "extract": ["text", "ocr", "metadata", "magika", "thumbnail"],
+  "extract": ["text", "document", "ocr", "metadata", "magika", "thumbnail"],
   "pages": "1-3",
   "magika": {
     "label": "pdf",
     "mime_type": "application/pdf",
-    "description": "PDF document",
     "group": "document",
     "extensions": ["pdf"]
   },
   "metadata": {
-    "title": "英语语法系统学习",
-    "author": null,
-    "page_count": 10,
     "file_size": 1048576,
+    "page_count": 10,
     "created": null,
     "modified": "2026-07-01T08:00:00"
   },
   "result": {
     "text": {
-      "content": "## Page 1\n\n正文...",
+      "content": "纯文本内容...",
       "length": 1234,
+      "path": null
+    },
+    "document": {
+      "content": "## 文档正文...",
+      "length": 5678,
       "path": null
     },
     "ocr": {
