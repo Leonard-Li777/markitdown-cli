@@ -368,11 +368,20 @@ def build_markitdown(onefile: bool):
         str(REPO_ROOT / "markitdown.spec"),
         "--clean", "--noconfirm",
     ]
-    subprocess.run(cmd, cwd=str(REPO_ROOT), check=True)
+    result = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True)
+    if result.returncode != 0:
+        print(result.stdout[-2000:] if result.stdout else "")
+        print(result.stderr[-2000:] if result.stderr else "", file=sys.stderr)
+        result.check_returncode()
 
     exe = DIST_DIR / ("markitdown.exe" if SYSTEM == "Windows" else "markitdown")
+    if not exe.exists():
+        # macOS onedir output is under the directory name
+        exe = DIST_DIR / "markitdown" / ("markitdown.exe" if SYSTEM == "Windows" else "markitdown")
     if exe.exists():
         ok(f"Executable: {exe} ({exe.stat().st_size // (1024*1024)} MB)")
+    else:
+        warn("Executable not found after build")
 
 
 # ---------------------------------------------------------------------------
