@@ -249,7 +249,7 @@ markitdown document.pdf \
 |:---|------|:-----------------:|:-----------------:|
 | `text` | 纯文本文件（magika group: `text`，如 `.txt` `.csv` `.html`） | `--text-out FILE` | 内联 `result.text.content` |
 | `document` | PDF / Office 文档（magika group: `document`） | `--document-out FILE` | 内联 `result.document.content` |
-| `ocr` | OCR 识别文本（**自动启用 OCR**，无需额外 `--use-ocr`） | `--ocr-out FILE` | 内联 `result.ocr.content` |
+| `ocr` | OCR 识别文本（**自动启用 OCR**，无需额外 `--use-ocr`）。<br>支持图片格式：`PNG`、`JPG/JPEG`、`WebP`、`BMP`、`TIFF/TIF`、`GIF`、`AVIF`。非 RGB 模式自动转 RGB | `--ocr-out FILE` | 内联 `result.ocr.content` |
 | `html` | HTML 转换 | `--html-out FILE` | 内联 `result.html.content` |
 | `metadata` | 文件元数据 | `--metadata-out FILE` | 内联 `metadata` |
 | `magika` | magika 文件类型识别 | `--magika-out FILE` | 内联 `magika` |
