@@ -519,7 +519,7 @@ def main():
             final = DIST_DIR / ("markitdown.exe" if SYSTEM == "Windows" else "markitdown")
             if boot.exists():
                 shutil.move(str(boot), str(final))
-                ok("Renamed _markitdown_boot → markitdown")
+                ok("Renamed _markitdown_boot -> markitdown")
             ok("Flattened dist/markitdown/ → dist/")
 
         print_output_tree()
