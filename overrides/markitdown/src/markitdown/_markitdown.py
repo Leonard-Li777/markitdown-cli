@@ -562,6 +562,8 @@ def _build_metadata_output(res: DocumentConverterResult) -> str:
         parts.append(f"title: {res.title}")
     if res.metadata:
         for key, value in res.metadata.items():
+            if value is None:
+                continue
             if isinstance(value, list):
                 value = ", ".join(str(v) for v in value)
             parts.append(f"{key}: {value}")
