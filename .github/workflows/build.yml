@@ -55,12 +55,12 @@ jobs:
     timeout-minutes: 120
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
           fetch-depth: 1
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
 
@@ -81,7 +81,7 @@ jobs:
           $name = "markitdown-bin-${{ matrix.platform }}-${{ matrix.arch }}"
           Compress-Archive -Path "dist/*" -DestinationPath "$name.zip" -CompressionLevel Optimal
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: markitdown-bin-${{ matrix.platform }}-${{ matrix.arch }}
           path: markitdown-bin-${{ matrix.platform }}-${{ matrix.arch }}.${{ matrix.ext }}
@@ -91,7 +91,7 @@ jobs:
     needs: [select, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -99,7 +99,7 @@ jobs:
         id: tag
         run: echo "name=v$(date +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         continue-on-error: true
         with:
           path: release-assets
