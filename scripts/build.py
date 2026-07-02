@@ -495,11 +495,12 @@ def main():
             else:
                 warn(f"Unsupported platform: {SYSTEM}. ExifTool not bundled.")
 
-        # Step 5: copy render_page.py (UNO helper) alongside the executable
-        render_src = REPO_ROOT / "scripts" / "render_page.py"
-        if render_src.exists():
-            shutil.copy2(str(render_src), str(DIST_DIR / "markitdown" / "render_page.py"))
-            ok("render_page.py copied")
+        # Step 5: copy helper scripts alongside the executable
+        for helper in ("render_page.py", "probe_uno.py"):
+            src = REPO_ROOT / "scripts" / helper
+            if src.exists():
+                shutil.copy2(str(src), str(DIST_DIR / "markitdown" / helper))
+                ok(f"{helper} copied")
 
         # Step 6: flatten — move everything from dist/markitdown/ up to dist/
         app_dir = DIST_DIR / "markitdown"

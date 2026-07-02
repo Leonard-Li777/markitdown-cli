@@ -220,7 +220,13 @@ def _try_connect_uno(port: int, timeout: float = 4.0) -> bool:
     lo_py = _uno_python()
     if lo_py is None:
         return False
-    probe = os.path.join(os.path.dirname(__file__), "..", "..", "..", "scripts", "probe_uno.py")
+    # Locate probe_uno.py — next to executable or in scripts/
+    probe = None
+    exe_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else None
+    if exe_dir:
+        probe = os.path.join(exe_dir, "probe_uno.py")
+    if not probe or not os.path.isfile(probe):
+        probe = os.path.join(os.path.dirname(__file__), "..", "..", "..", "scripts", "probe_uno.py")
     if not os.path.isfile(probe):
         return False
     try:
