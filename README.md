@@ -422,7 +422,9 @@ Content-Type: application/json
     "mime_type": "application/pdf",
     "description": "PDF document",
     "group": "document",
-    "extensions": ["pdf"]
+    "score": 0.997,
+    "extensions": ["pdf"],
+    "is_text": false
   },
   "metadata": {
     "title": "英语语法系统学习",
@@ -467,7 +469,9 @@ Content-Type: application/json
     "label": "pdf",
     "mime_type": "application/pdf",
     "group": "document",
-    "extensions": ["pdf"]
+    "score": 0.997,
+    "extensions": ["pdf"],
+    "is_text": false
   },
   "metadata": {
     "file_size": 1048576,
