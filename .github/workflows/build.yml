@@ -65,9 +65,7 @@ jobs:
           python-version: '3.13'
 
       - name: Install dependencies
-        run: |
-          pip install --upgrade pip setuptools wheel
-          pip install pyinstaller
+        run: pip install pyinstaller
 
       - name: Build
         run: python scripts/build.py --skip-deps
