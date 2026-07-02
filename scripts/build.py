@@ -520,7 +520,7 @@ def main():
             if boot.exists():
                 shutil.move(str(boot), str(final))
                 ok("Renamed _markitdown_boot -> markitdown")
-            ok("Flattened dist/markitdown/ → dist/")
+            ok("Flattened dist/markitdown/ -> dist/")
 
         print_output_tree()
 
