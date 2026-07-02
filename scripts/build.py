@@ -351,6 +351,11 @@ def build_markitdown(onefile: bool):
         [sys.executable, "-m", "pip", "install", "pyinstaller", "pytesseract"],
         check=False, capture_output=True,
     )
+    # Ensure magika >= 1.0.3 (score is on result, not result.output)
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "magika>=1.0.3,<2.0"],
+        check=False, capture_output=True,
+    )
 
     for name, pkg_path in [("markitdown", MARKITDOWN_PKG), ("markitdown-ocr", MARKITDOWN_OCR_PKG)]:
         if not (pkg_path / "pyproject.toml").exists():
