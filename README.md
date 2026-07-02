@@ -203,6 +203,35 @@ markitdown document.pdf --with-metadata        # 包含元数据
 markitdown document.pdf --metadata-only        # 仅输出元数据
 ```
 
+`--extract metadata` 或 `--with-metadata` 时返回文件元数据，数据来源：
+
+| 来源 | 说明 |
+|------|------|
+| 操作系统 | `file_size`、`created`、`modified`（ISO 8601） |
+| ExifTool | 所有读取到的元数据字段（不限白名单），如 `title`、`author`、`ImageSize`、`GPSPosition`、`DateTimeOriginal` 等 |
+| PyMuPDF | `page_count`（仅 PDF 文件） |
+
+**只添加有实际值的字段**，ExifTool 未读到的字段不会出现在输出中。
+
+### 常见元数据字段示例
+
+| 字段 | 类型 | 含义 |
+|:----|:----|:-----|
+| `file_size` | int | 文件字节数 |
+| `page_count` | int | 文档页数（PDF） |
+| `created` | string | 文件创建时间（ISO 8601） |
+| `modified` | string | 文件修改时间（ISO 8601） |
+| `title` | string | 文档标题（从 ExifTool 或文件元数据） |
+| `author` | string | 作者 |
+| `ImageSize` | string | 图片尺寸，如 `1920x1080`（图片文件） |
+| `DateTimeOriginal` | string | 拍摄时间（图片） |
+| `GPSPosition` | string | GPS 坐标（图片） |
+| `Artist` | string | 创作者（图片/音频） |
+| `Album` | string | 专辑名（音频） |
+| `Genre` | string | 流派（音频） |
+
+> 如果安装了 ExifTool（打包在 `dist/exiftool/`），会返回更多字段。未安装时只返回基本统计字段。
+
 ## 多指标并行提取（`--extract`）
 
 `--extract` 支持一次调用同时提取多个指标，所有指标**并行执行**（`ThreadPoolExecutor`），总耗时 ≈ 最慢的单个指标。
@@ -397,10 +426,8 @@ Content-Type: application/json
   },
   "metadata": {
     "title": "英语语法系统学习",
-    "author": null,
     "page_count": 10,
     "file_size": 1048576,
-    "created": null,
     "modified": "2026-07-01T08:00:00"
   },
   "result": {
@@ -445,7 +472,6 @@ Content-Type: application/json
   "metadata": {
     "file_size": 1048576,
     "page_count": 10,
-    "created": null,
     "modified": "2026-07-01T08:00:00"
   },
   "result": {
