@@ -451,9 +451,9 @@ def main():
                 cwd=str(REPO_ROOT), check=True,
             )
 
-        # Step 3: bundle Tesseract
+        # Step 3: bundle Tesseract into dist/markitdown/ (alongside _internal/)
         if not args.skip_tesseract:
-            tesseract_dir = DIST_DIR / "tesseract"
+            tesseract_dir = DIST_DIR / "markitdown" / "tesseract"
             tesseract_dir.mkdir(parents=True, exist_ok=True)
 
             print()
@@ -469,9 +469,9 @@ def main():
             print()
             download_tessdata(tesseract_dir / "tessdata")
 
-        # Step 4: bundle ExifTool
+        # Step 4: bundle ExifTool into dist/markitdown/
         if not args.skip_exiftool:
-            exiftool_dir = DIST_DIR / "exiftool"
+            exiftool_dir = DIST_DIR / "markitdown" / "exiftool"
             exiftool_dir.mkdir(parents=True, exist_ok=True)
 
             print()
@@ -483,6 +483,12 @@ def main():
                 setup_exiftool_macos(exiftool_dir)
             else:
                 warn(f"Unsupported platform: {SYSTEM}. ExifTool not bundled.")
+
+        # Step 5: copy render_page.py (UNO helper) alongside the executable
+        render_src = REPO_ROOT / "scripts" / "render_page.py"
+        if render_src.exists():
+            shutil.copy2(str(render_src), str(DIST_DIR / "markitdown" / "render_page.py"))
+            ok("render_page.py copied")
 
         print_output_tree()
 

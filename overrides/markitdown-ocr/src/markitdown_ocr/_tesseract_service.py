@@ -24,8 +24,14 @@ class TesseractOCRService:
             elif os.environ.get("TESSERACT_PATH"):
                 pytesseract.pytesseract.tesseract_cmd = os.environ["TESSERACT_PATH"]
             elif sys.platform == "win32":
+                exe_dir = os.path.dirname(sys.executable)
+                # onedir: exe at dist/markitdown/markitdown.exe → tesseract at dist/tesseract/
+                parent_dir = os.path.dirname(exe_dir) if os.path.basename(exe_dir) in ("_internal", "markitdown") else exe_dir
                 candidates = [
-                    os.path.join(os.path.dirname(sys.executable), "tesseract.exe"),
+                    os.path.join(exe_dir, "tesseract", "tesseract.exe"),
+                    os.path.join(exe_dir, "tesseract.exe"),
+                    os.path.join(parent_dir, "tesseract", "tesseract.exe"),
+                    os.path.join(parent_dir, "tesseract.exe"),
                     r"C:\Program Files\Tesseract-OCR\tesseract.exe",
                     r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
                 ]

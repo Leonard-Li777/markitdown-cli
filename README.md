@@ -6,7 +6,7 @@
 
 ```
 markitdown/              git submodule — 上游源码
-overrides/               自定义补丁（ocr、thumbnail、html、pdf）
+overrides/               自定义补丁（ocr、thumbnail、html、pdf、router）
 scripts/
   build.py               跨平台构建脚本
   markitdown_cli_wrapper.py  PyInstaller 入口
@@ -19,9 +19,9 @@ markitdown.spec          PyInstaller 配置
 
 | 平台 | 需求 |
 |---|---|
-| Windows | 7-Zip（自动下载 Tesseract） |
-| macOS | Homebrew + `brew install tesseract dylibbundler` |
-| Linux | —（自动下载静态 musl Tesseract） |
+| Windows | 7-Zip（自动下载 Tesseract）；LibreOffice（Office 转 PDF / OCR 需要） |
+| macOS | Homebrew + `brew install tesseract dylibbundler`；LibreOffice |
+| Linux | —（自动下载静态 musl Tesseract）；LibreOffice |
 
 ### 命令
 
@@ -50,6 +50,15 @@ python scripts/build.py --skip-tesseract   # 跳过 Tesseract 打包
 python scripts/build.py --skip-deps        # 跳过 pip install
 python scripts/build.py --skip-overrides   # 跳过应用补丁
 ```
+
+## 路由与分块处理（`_router.py`）
+
+文档处理根据文件类型、大小和 OCR 模式自动路由：
+
+- **PDF**：支持 `--pages` 选页，大文件自动按块处理（普通模式 50 页/块，OCR 模式 5 页/块）
+- **大 XLSX**（>20MB 且非 OCR）：`openpyxl(read_only=True)` 流式读取，避免 OOM
+- **Office 文件 + OCR**：经 LibreOffice / win32com 转为 PDF 后递归路由，`--pages` 在 PDF 阶段精确选页
+- **Office 文件 + 普通**：直接提取文本（PPTX 使用 python-pptx，DOCX 使用 mammoth/markitdown）
 
 ## 子命令
 
@@ -116,7 +125,21 @@ markitdown pdf book.xlsx -o chapter.pdf --pages "5-10"
 | PPTX | win32com COM（PowerPoint） | LibreOffice |
 | XLSX | LibreOffice | — |
 
-需要安装 LibreOffice（https://libreoffice.org）或 Microsoft Office。
+需要安装 **LibreOffice**（https://libreoffice.org）或 Microsoft Office（Windows COM）。
+
+### LibreOffice 自动检测（`_libreoffice_detect.py`）
+
+跨平台多级降级策略，自动定位 LibreOffice 安装路径：
+
+| 平台 | 检测层级 |
+|------|----------|
+| **Windows** | ① 注册表（`HKLM\SOFTWARE\LibreOffice\UNO` → `WOW6432Node` → `HKCU`）→ ② 默认路径（`Program Files` / `Program Files (x86)`）→ ③ `where soffice`（PATH） |
+| **macOS** | ① `/Applications/LibreOffice.app/Contents/MacOS/soffice` → ② `which soffice` |
+| **Linux** | ① `which soffice` / `which libreoffice` → ② `dpkg -l` → ③ `rpm -qa` |
+
+- 检测到后自动转换为短路径格式（Windows 8.3 路径，如 `C:\PROGRA~1\...`）
+- 版本号惰性获取：路径检测不调用 `soffice --version`，仅在显式请求时执行
+- 自动隐藏 Windows 控制台弹窗（`STARTF_USESHOWWINDOW` + `stdin=DEVNULL`）
 
 ## 统一 `--pages` 语法
 
@@ -142,15 +165,271 @@ markitdown document.pdf --use-ocr --ocr-engine llm --llm-model gpt-4o
 |---|---|
 | `--use-ocr` | 启用 OCR |
 | `--ocr-engine` | `tesseract`（默认）或 `llm` |
-| `--tesseract-path` | 指定 Tesseract 路径 |
+| `--tesseract-path` | 指定 Tesseract 可执行文件路径。省略时自动检测 |
 | `--tesseract-lang` | 语言，如 `eng`、`chi_sim`、`eng+chi_sim` |
 | `--llm-model` | LLM 模型名（`--ocr-engine=llm` 时需要） |
+
+### Tesseract 自动检测（`_tesseract_service.py`）
+
+当未通过 `--tesseract-path` 或环境变量指定路径时，按以下顺序自动查找：
+
+| 优先级 | 来源 | 说明 |
+|:---:|---|------|
+| ① | `--tesseract-path` 参数 | 用户显式指定 |
+| ② | `TESSERACT_PATH` 环境变量 | 全局环境变量 |
+| ③ | `tesseract/` 子目录 | 打包后 `markitdown.exe` 同目录下的 `tesseract/tesseract.exe` |
+| ④ | 可执行文件同目录 | 打包后 `markitdown.exe` 同目录的 `tesseract.exe` |
+| ⑤ | `C:\Program Files\Tesseract-OCR\tesseract.exe` | 系统默认安装路径 |
+| ⑥ | `C:\Program Files (x86)\Tesseract-OCR\tesseract.exe` | 32 位备选路径 |
+
+自动设置 `TESSDATA_PREFIX` 环境变量指向 `tessdata/` 目录（如果该目录存在于 Tesseract 同目录下）。
+
+## LibreOffice 选项
+
+```bash
+markitdown document.pptx --libreoffice-path "C:\Program Files\LibreOffice\program\soffice.exe"
+```
+
+| 参数 | 说明 |
+|---|---|
+| `--libreoffice-path` | 指定 LibreOffice 可执行文件路径。省略时自动检测（注册表/常见路径/PATH） |
 
 ## 元数据支持
 
 ```bash
 markitdown document.pdf --with-metadata        # 包含元数据
 markitdown document.pdf --metadata-only        # 仅输出元数据
+```
+
+## 多指标并行提取（`--extract`）
+
+`--extract` 支持一次调用同时提取多个指标，所有指标**并行执行**（`ThreadPoolExecutor`），总耗时 ≈ 最慢的单个指标。
+
+```bash
+# 所有指标并行提取，结果 JSON 输出到 stdout
+markitdown document.pdf \
+  --extract text,ocr,metadata,magika,thumbnail \
+  --pages "1-3"
+```
+
+### `--extract` 取值
+
+| 值 | 说明 | 对应 `--xxx-out` | 无 `--xxx-out` 时 |
+|:---|------|:-----------------:|:-----------------:|
+| `text` | Markdown 文本 | `--text-out FILE` | 内联 `result.text.content` |
+| `ocr` | OCR 识别文本 | `--ocr-out FILE` | 内联 `result.ocr.content` |
+| `html` | HTML 转换 | `--html-out FILE` | 内联 `result.html.content` |
+| `metadata` | 文件元数据 | `--metadata-out FILE` | 内联 `metadata` |
+| `magika` | magika 文件类型识别 | `--magika-out FILE` | 内联 `magika` |
+| `thumbnail` | 封面/预览图（**无需 `--pages`**） | `--thumbnail-out FILE` | base64 内联 `thumbnail.data` |
+
+### 各指标输出路径控制
+
+```bash
+# 全部输出到文件，JSON 返回路径
+markitdown document.pdf \
+  --extract text,ocr,metadata,magika,thumbnail \
+  --pages "1-3" \
+  --text-out output.md \
+  --ocr-out ocr.txt \
+  --thumbnail-out preview.png
+
+# 混合：部分存文件，部分内联
+markitdown document.pdf \
+  --extract text,ocr,metadata \
+  --text-out output.md
+  # ocr 和 metadata 无对应 --xxx-out → 内联在 JSON 中
+```
+
+**规则**：
+- 指定 `--xxx-out` 则对应字段 `content=null`、`path=路径`；否则 `content=内容`、`path=null`
+- `thumbnail` 不接受 `--pages`，总是取嵌入缩略图或渲染第 1 页
+- 当 `--extract` 包含多个指标时自动输出 JSON（单个指标且无 `-o` 时兼容旧行为输出纯文本）
+
+### 并行提取示意图
+
+```
+                ┌──────────┐
+                │ file_bytes│
+                └────┬─────┘
+        ┌───────┬───┼───┬───────┬───────┐
+        ▼       ▼   ▼   ▼       ▼       ▼
+    magika  meta  thumb text   ocr     html
+    (0.01s) (0.1)(0.5) (1.3) (7.2s)  (1.3s)
+        └───────┴───┴───┴───────┴───────┘
+                    总耗时 ≈ max(...) = 7.2s
+```
+
+## Server 模式
+
+常驻 HTTP API 服务，LibreOffice / Tesseract / magika 只加载一次，后续请求复用。
+
+```bash
+markitdown server                    # 5052, 被占用→5053→5054…
+markitdown server --port 8080        # 指定端口
+markitdown server --port 0           # 系统分配，stdout 获取端口号
+markitdown server --port-file /tmp/port.txt  # 端口号写入文件
+```
+
+**常驻优化**：
+
+| 组件 | 策略 |
+|------|------|
+| LibreOffice | UNO pipe 后台进程，首次调用后保持 |
+| Tesseract | `TesseractOCRService` 单例 |
+| magika | `Magika()` 单例，模型常驻 |
+| MarkItDown | 实例复用 |
+
+### 端口号获取
+
+启动时 stdout 首行打印 `PORT=5053`，调用方解析：
+
+```javascript
+const proc = spawn('markitdown', ['server']);
+proc.stdout.on('data', (data) => {
+  const m = data.toString().match(/PORT=(\d+)/);
+  if (m) fetch(`http://127.0.0.1:${m[1]}/health`);
+});
+```
+
+或 `--port-file` 方式：
+
+```bash
+markitdown server --port-file /tmp/markitdown.port
+# 等待文件出现，内容即端口号
+```
+
+### API 接口
+
+#### `GET /health`
+
+```json
+{
+  "status": "ok",
+  "version": "0.1.6",
+  "uptime_sec": 3600,
+  "libreoffice": {
+    "detected": true,
+    "version": "26.2.0.3",
+    "mode": "cli"
+  },
+  "tesseract": {
+    "detected": true,
+    "lang": "eng+chi_sim"
+  },
+  "magika": {
+    "detected": true
+  }
+}
+```
+
+#### `POST /extract`
+
+`multipart/form-data`
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|:----:|------|
+| `file` | file | ✅ | 上传文件 |
+| `extract` | string | ✅ | 逗号分隔：`text,ocr,metadata,magika,thumbnail,html` |
+| `pages` | string | 否 | 页码（仅影响 text/ocr/html） |
+| `ocr_lang` | string | 否 | 默认 `"eng+chi_sim"` |
+| `thumbnail_format` | string | 否 | `"png"` / `"jpg"` / `"webp"`，默认 `"png"` |
+
+**Response**：
+
+```json
+{
+  "status": "ok",
+  "time_ms": 1234,
+  "file": {
+    "name": "document.pdf",
+    "size": 1048576,
+    "pages": 10
+  },
+  "extract": ["text", "ocr", "metadata", "magika", "thumbnail"],
+  "pages": "1-3",
+  "magika": {
+    "label": "pdf",
+    "mime_type": "application/pdf",
+    "description": "PDF document",
+    "group": "document",
+    "extensions": ["pdf"]
+  },
+  "metadata": {
+    "title": "英语语法系统学习",
+    "author": null,
+    "page_count": 10,
+    "file_size": 1048576,
+    "created": null,
+    "modified": "2026-07-01T08:00:00"
+  },
+  "result": {
+    "text": { "content": "## Page 1\n\n正文...", "length": 1234 },
+    "ocr":  { "content": "OCR结果...", "length": 567 },
+    "html": { "content": "<h1>Page 1</h1><p>...</p>", "length": 2000 },
+    "pages_processed": 3
+  },
+  "thumbnail": {
+    "format": "png", "dpi": 150,
+    "data": "iVBORw0KGgo..."
+  }
+}
+```
+
+#### `GET /extract/:file_id`（大文件异步轮询）
+
+```
+→ 202 Accepted  { "status": "accepted", "file_id": "uuid", "poll_url": "/extract/uuid" }
+→ GET /extract/uuid  → 200 OK  { "status": "ok", ... }
+```
+
+## CLI 输出 JSON 结构（`--extract` 多指标时）
+
+```json
+{
+  "status": "ok",
+  "time_ms": 1234,
+  "file": {
+    "name": "document.pdf",
+    "size": 1048576,
+    "pages": 10
+  },
+  "extract": ["text", "ocr", "metadata", "magika", "thumbnail"],
+  "pages": "1-3",
+  "magika": {
+    "label": "pdf",
+    "mime_type": "application/pdf",
+    "description": "PDF document",
+    "group": "document",
+    "extensions": ["pdf"]
+  },
+  "metadata": {
+    "title": "英语语法系统学习",
+    "author": null,
+    "page_count": 10,
+    "file_size": 1048576,
+    "created": null,
+    "modified": "2026-07-01T08:00:00"
+  },
+  "result": {
+    "text": {
+      "content": "## Page 1\n\n正文...",
+      "length": 1234,
+      "path": null
+    },
+    "ocr": {
+      "content": "OCR结果...",
+      "length": 567,
+      "path": null
+    },
+    "pages_processed": 3
+  },
+  "thumbnail": {
+    "format": "png", "dpi": 150,
+    "data": "iVBORw0KGgo...",
+    "path": null
+  }
+}
 ```
 
 ## 支持的输入格式

@@ -170,6 +170,24 @@ def _pdf_command():
         sys.exit(1)
 
 
+def _server_command():
+    """Start the MarkItDown HTTP API server (--extract equivalent over HTTP)."""
+    parser = argparse.ArgumentParser(
+        description="Start MarkItDown HTTP API server for document extraction.",
+        prog="markitdown server",
+    )
+    parser.add_argument("--port", type=int, default=5052,
+                        help="Port to listen on (default 5052; auto-increments if taken). Use 0 for OS-assigned.")
+    parser.add_argument("--host", type=str, default="127.0.0.1",
+                        help="Host to bind to (default 127.0.0.1)")
+    parser.add_argument("--port-file", type=str, default=None,
+                        help="Write the actual port number to this file")
+    args = parser.parse_args(sys.argv[2:])
+
+    from ._server import run_server
+    run_server(host=args.host, port=args.port, port_file=args.port_file)
+
+
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "thumbnail":
         _thumbnail_command()
@@ -179,6 +197,9 @@ def main():
         return
     if len(sys.argv) > 1 and sys.argv[1] == "pdf":
         _pdf_command()
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "server":
+        _server_command()
         return
 
     parser = argparse.ArgumentParser(
@@ -350,6 +371,30 @@ def main():
     )
 
     parser.add_argument(
+        "--libreoffice-path",
+        type=str,
+        help="Path to the LibreOffice executable (soffice). If provided, "
+        "skips auto-detection and uses this path directly.",
+    )
+
+    # Multi-indicator extraction
+    extract_group = parser.add_argument_group("Multi-indicator extraction")
+    extract_group.add_argument(
+        "--extract",
+        type=str,
+        help="Comma-separated indicators to extract: text,document,ocr,html,metadata,magika,thumbnail. "
+        "When multiple indicators are specified, output is JSON.",
+    )
+    for _ind in ("text", "document", "ocr", "html", "metadata", "magika", "thumbnail"):
+        extract_group.add_argument(
+            f"--{_ind}-out",
+            type=str,
+            metavar="FILE",
+            dest=f"{_ind}_out",
+            help=f"Path to save {_ind} output (when omitted, returned inline in JSON).",
+        )
+
+    parser.add_argument(
         "--with-metadata",
         action="store_true",
         help="Include file metadata (ExifTool fields, EPUB info, email headers) in the output. "
@@ -497,19 +542,101 @@ def main():
     if args.metadata_only and args.with_metadata:
         _exit_with_error("--metadata-only and --with-metadata are mutually exclusive.")
 
-    markitdown = MarkItDown(**md_kwargs)
-
-    if args.filename is None:
-        result = markitdown.convert_stream(
-            sys.stdin.buffer,
-            stream_info=stream_info,
-            keep_data_uris=args.keep_data_uris,
-        )
+    # Read file bytes for the router
+    if args.filename is not None:
+        with open(args.filename, "rb") as f:
+            file_bytes = f.read()
+        file_path = args.filename
+        extension = os.path.splitext(args.filename)[1]
     else:
-        result = markitdown.convert(
-            args.filename, stream_info=stream_info, keep_data_uris=args.keep_data_uris
+        file_bytes = sys.stdin.buffer.read()
+        file_path = "stdin"
+        extension = extension_hint
+
+    # LibreOffice path override
+    if args.libreoffice_path:
+        from ._libreoffice_detect import setLibreOfficePath
+        try:
+            setLibreOfficePath(args.libreoffice_path)
+        except FileNotFoundError as e:
+            _exit_with_error(str(e))
+
+    # Build router arguments
+    route_kwargs = {
+        "enable_plugins": use_plugins,
+        "with_metadata": args.with_metadata,
+        "metadata_only": args.metadata_only,
+        "keep_data_uris": args.keep_data_uris,
+    }
+
+    if args.use_docintel:
+        route_kwargs["docintel_endpoint"] = args.endpoint
+    elif args.use_cu:
+        route_kwargs["cu_endpoint"] = args.cu_endpoint
+        if args.cu_analyzer is not None:
+            route_kwargs["cu_analyzer_id"] = args.cu_analyzer
+        if args.cu_file_types is not None:
+            route_kwargs["cu_file_types"] = md_kwargs.get("cu_file_types")
+
+    if args.use_ocr:
+        route_kwargs["ocr_engine"] = args.ocr_engine
+        if args.ocr_engine == "tesseract":
+            if args.tesseract_path:
+                route_kwargs["tesseract_path"] = args.tesseract_path
+            route_kwargs["tesseract_lang"] = args.tesseract_lang
+        elif args.ocr_engine == "llm":
+            if args.llm_model:
+                route_kwargs["llm_client"] = md_kwargs.get("llm_client")
+                route_kwargs["llm_model"] = args.llm_model
+
+    from ._router import route_document
+
+    # ---- Multi-indicator extraction ----
+    if args.extract:
+        extract_list = [s.strip() for s in args.extract.split(",") if s.strip()]
+        from ._extractor import extract_to_json
+
+        # Auto-enable OCR when 'ocr' is in extract list
+        if "ocr" in extract_list:
+            args.use_ocr = True
+
+        output_paths = {}
+        for ind in ("text", "document", "ocr", "html", "metadata", "magika", "thumbnail"):
+            val = getattr(args, f"{ind}_out", None)
+            if val:
+                output_paths[ind] = val
+
+        ocr_lang = getattr(args, "tesseract_lang", "eng+chi_sim")
+        result_json = extract_to_json(
+            file_path=file_path,
+            file_bytes=file_bytes,
+            extract_list=extract_list,
+            pages_spec_str=args.pages,
+            ocr_lang=ocr_lang,
+            thumbnail_format="png",
+            output_paths=output_paths,
         )
 
+        import json
+        output = json.dumps(result_json, ensure_ascii=False, indent=2)
+        if args.output:
+            with open(args.output, "w", encoding="utf-8") as f:
+                f.write(output)
+        else:
+            print(output)
+        return
+
+    # ---- Single extraction (original behavior) ----
+    markdown_text = route_document(
+        file_path=file_path,
+        file_bytes=file_bytes,
+        extension=extension,
+        enable_ocr=args.use_ocr,
+        pages_spec_str=args.pages,
+        **route_kwargs
+    )
+
+    result = DocumentConverterResult(markdown=markdown_text)
     _handle_output(args, result)
 
 

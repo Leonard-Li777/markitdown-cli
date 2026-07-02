@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 #
-# PyInstaller spec for MarkItDown single-file CLI.
+# PyInstaller spec for MarkItDown onedir CLI.
+# Produces dist/markitdown/ directory (self-contained, no runtime deps).
 # Tesseract is NOT embedded; place alongside the executable.
 #
 # Build:
@@ -152,9 +153,6 @@ pyz = PYZ(a.pure, a.zipped_data)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
     name='markitdown',
     debug=False,
@@ -170,4 +168,12 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    name='markitdown',
 )

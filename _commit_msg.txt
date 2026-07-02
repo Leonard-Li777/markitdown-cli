@@ -1,0 +1,14 @@
+feat: LibreOffice detection, parallel extraction, UNO page render, HTTP server
+
+- _libreoffice_detect.py: cross-platform LO detection with lazy version
+- _extractor.py: ThreadPoolExecutor parallel extraction (6 indicators)
+- _server.py: HTTP API server (GET /health, POST /extract)
+- _router.py: document processing router with PDF chunking
+- render_page.py: UNO page-selective PDF export via LO built-in Python
+- probe_uno.py: UNO listener health probe
+- _pdf_output.py: UNO listener management with atexit cleanup
+- _tesseract_service.py: fix tesseract/tesseract subdirectory + parent dir
+- __main__.py: --extract, --xxx-out, server subcommand, auto-OCR
+- build.py: bundle Tesseract/ExifTool inside dist/markitdown/
+- markitdown.spec: onedir mode (EXE + COLLECT)
+- .gitignore: add tests/ directory

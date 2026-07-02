@@ -18,6 +18,7 @@ __pycache__/
 Thumbs.db
 
 # Temp / test artifacts
+tests/
 *.jpg
 *.jpeg
 *.png
