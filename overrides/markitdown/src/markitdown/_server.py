@@ -127,6 +127,12 @@ class _Handler(BaseHTTPRequestHandler):
             ocr_lang = body.get("ocr_lang", "eng+chi_sim")
             thumb_fmt = body.get("thumbnail_format", "png")
             thumbnail_out = body.get("thumbnail_out")
+            text_out = body.get("text_out")
+            document_out = body.get("document_out")
+            ocr_out = body.get("ocr_out")
+            html_out = body.get("html_out")
+            metadata_out = body.get("metadata_out")
+            magika_out = body.get("magika_out")
 
             if isinstance(extract_str, list):
                 extract_str = ",".join(extract_str)
@@ -162,6 +168,12 @@ class _Handler(BaseHTTPRequestHandler):
             ocr_lang = fields.get("ocr_lang", "eng+chi_sim")
             thumb_fmt = fields.get("thumbnail_format", "png")
             thumbnail_out = fields.get("thumbnail_out")
+            text_out = fields.get("text_out")
+            document_out = fields.get("document_out")
+            ocr_out = fields.get("ocr_out")
+            html_out = fields.get("html_out")
+            metadata_out = fields.get("metadata_out")
+            magika_out = fields.get("magika_out")
 
             if not file_data:
                 self._send_error(400, "No file uploaded")
@@ -192,8 +204,12 @@ class _Handler(BaseHTTPRequestHandler):
 
         try:
             output_paths = {}
-            if thumbnail_out:
-                output_paths["thumbnail"] = thumbnail_out
+            for key, val in [("text", text_out), ("document", document_out),
+                             ("ocr", ocr_out), ("html", html_out),
+                             ("metadata", metadata_out), ("magika", magika_out),
+                             ("thumbnail", thumbnail_out)]:
+                if val:
+                    output_paths[key] = val
             result = run_extraction(
                 file_path=tmp_path,
                 file_bytes=file_bytes,
