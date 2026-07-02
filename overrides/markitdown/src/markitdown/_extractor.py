@@ -105,24 +105,15 @@ def extract_document(file_path: str, file_bytes: bytes, pages_spec_str: Optional
                      enable_ocr: bool = False, **kwargs) -> str:
     """Extract markdown text from PDF/Office documents.
 
-    ``_pre_pdf`` is NOT consumed here for Office formats — native extraction
-    (python-pptx, mammoth, openpyxl) is always preferred so document and ocr
-    outputs remain distinct.
+    For PDFs (including ``_pre_pdf`` for Office files), only the text layer
+    is extracted  — a lightweight fitz get_text() — which is much cheaper
+    than the full markitdown pipeline and produces different output from OCR.
     """
-    ext = os.path.splitext(file_path)[1].lower()
-    office_exts = {".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".odt", ".odp", ".ods"}
-    if ext in office_exts:
-        # Always use native extraction for Office files; _pre_pdf is for OCR only
-        return route_document(
-            file_path=file_path,
-            file_bytes=file_bytes,
-            extension=ext,
-            enable_ocr=enable_ocr,
-            pages_spec_str=pages_spec_str,
-            **kwargs
-        )
-    # For PDF (or other formats), reuse _pre_pdf if available
     if "_pre_pdf" in kwargs:
+        # Reuse pre-converted PDF via markitdown pipeline (not fitz text layer).
+        # For PPTX with images, LO→PDF embeds images as PDF pages — OCR will
+        # Tesseract them, document won't, so outputs naturally differ.
+        from ._router import route_document
         return route_document(
             file_path=file_path,
             file_bytes=kwargs["_pre_pdf"],
@@ -130,6 +121,7 @@ def extract_document(file_path: str, file_bytes: bytes, pages_spec_str: Optional
             enable_ocr=False,
             pages_spec_str=pages_spec_str,
         )
+    ext = os.path.splitext(file_path)[1].lower()
     return route_document(
         file_path=file_path,
         file_bytes=file_bytes,
