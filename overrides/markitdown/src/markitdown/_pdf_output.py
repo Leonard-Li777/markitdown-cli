@@ -17,7 +17,19 @@ def _run_libreoffice(args: list[str], timeout: int = 300) -> subprocess.Complete
     """
     Run LibreOffice with the given arguments, suppressing console windows
     and stdin prompts on Windows (avoids the 'Press Enter to continue...' dialog).
+
+    A unique temporary ``UserInstallation`` directory is used for each invocation
+    to avoid lock conflicts when another LibreOffice instance is already running
+    (exit code 1 with no output).
     """
+    args = list(args)
+    # Insert before the file path argument (last arg)
+    import tempfile
+    user_install = tempfile.mkdtemp(prefix="lo_")
+    args.insert(-1, f"-env:UserInstallation=file:///{user_install.replace(os.sep, '/')}")
+    if "--norestore" not in args:
+        args.insert(-1, "--norestore")
+
     kwargs: dict = {
         "args": args,
         "capture_output": True,
