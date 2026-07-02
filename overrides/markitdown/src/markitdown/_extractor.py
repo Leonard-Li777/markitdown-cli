@@ -52,10 +52,10 @@ def extract_magika(file_bytes: bytes) -> dict:
 def extract_metadata(file_path: str, file_bytes: bytes, **kwargs) -> dict:
     """Extract file metadata — all keys from exiftool (if available), plus basic stats."""
     ext = os.path.splitext(file_path)[1].lower()
-    info = {"title": None, "author": None, "page_count": None,
-            "file_size": len(file_bytes), "created": None, "modified": None}
+    info: dict = {}
     try:
         stat = os.stat(file_path)
+        info["file_size"] = len(file_bytes)
         import datetime
         info["modified"] = datetime.datetime.fromtimestamp(
             stat.st_mtime, tz=datetime.timezone.utc
@@ -64,7 +64,7 @@ def extract_metadata(file_path: str, file_bytes: bytes, **kwargs) -> dict:
             stat.st_ctime, tz=datetime.timezone.utc
         ).isoformat()
     except (OSError, ValueError):
-        pass
+        info["file_size"] = len(file_bytes)
     # Try to get page count for PDFs
     if ext == ".pdf":
         try:
@@ -84,8 +84,7 @@ def extract_metadata(file_path: str, file_bytes: bytes, **kwargs) -> dict:
                 info.update(raw)
     except Exception:
         pass
-    # Strip keys whose value is None
-    return {k: v for k, v in info.items() if v is not None}
+    return info
 
 
 def extract_text(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str] = None,
