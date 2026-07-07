@@ -91,16 +91,61 @@ def extract_metadata(file_path: str, file_bytes: bytes, **kwargs) -> dict:
 
 def extract_text(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str] = None,
                  enable_ocr: bool = False, **kwargs) -> str:
-    """Extract markdown text from document (plain text files)."""
+    """Extract markdown text from document (plain text files).
+
+    Content is limited to 1MB. For files that fail markitdown conversion
+    (e.g. unknown type or non-UTF-8 encoding), detects encoding with chardet
+    and falls back to plain text extraction.
+
+    Note: when called through run_extraction for ``file_group=="text"``,
+    a raw-text path (1MB+chardet) is used instead of this function.
+    """
+    # Limit content to 1MB
+    MAX_TEXT_SIZE = 1_048_576
+    if len(file_bytes) > MAX_TEXT_SIZE:
+        file_bytes = file_bytes[:MAX_TEXT_SIZE]
+
     ext = os.path.splitext(file_path)[1].lower()
-    return route_document(
-        file_path=file_path,
-        file_bytes=file_bytes,
-        extension=ext,
-        enable_ocr=enable_ocr,
-        pages_spec_str=pages_spec_str,
-        **kwargs
-    )
+
+    # Try normal markitdown conversion first
+    try:
+        result = route_document(
+            file_path=file_path,
+            file_bytes=file_bytes,
+            extension=ext,
+            enable_ocr=enable_ocr,
+            pages_spec_str=pages_spec_str,
+            **kwargs
+        )
+        if result and result.strip():
+            return result
+    except Exception:
+        pass
+
+    # Fallback: detect encoding and extract as plain text
+    # Handles GBK (Chinese), Shift-JIS (Japanese), and other non-UTF-8 encodings
+    return _extract_text_raw(file_bytes)
+
+
+def _extract_text_raw(file_bytes: bytes) -> str:
+    """Raw plain-text extraction: 1MB limit + encoding detection via chardet.
+
+    Used for ``file_group=="text"`` files — bypasses the MarkItDown pipeline
+    and directly decodes the raw bytes with automatic encoding detection.
+    """
+    MAX_TEXT_SIZE = 1_048_576
+    if len(file_bytes) > MAX_TEXT_SIZE:
+        file_bytes = file_bytes[:MAX_TEXT_SIZE]
+    try:
+        import chardet
+        detection = chardet.detect(file_bytes)
+        encoding = detection.get("encoding") or "utf-8"
+        return file_bytes.decode(encoding, errors="replace")
+    except Exception:
+        try:
+            return file_bytes.decode("utf-8", errors="replace")
+        except Exception:
+            return ""
 
 
 def extract_document(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str] = None,
@@ -291,7 +336,7 @@ def run_extraction(
     if exiftool_path:
         kwargs["exiftool_path"] = exiftool_path
 
-    # Determine file group via magika and filter incompatible indicators
+    # Determine file group via magika
     file_group = "unknown"
     file_is_text = False
     try:
@@ -302,21 +347,40 @@ def run_extraction(
     except Exception:
         pass
 
-    # Build set of indicators to skip based on file type
+    # If magika says "unknown", try encoding detection — it might be a
+    # non-UTF-8 text file (GBK, Shift-JIS, etc.) that magika couldn't label.
+    if file_group == "unknown":
+        try:
+            import chardet
+            det = chardet.detect(file_bytes[:min(len(file_bytes), 1_048_576)])
+            enc = det.get("encoding")
+            conf = det.get("confidence", 0)
+            # Accept text encodings with reasonable confidence
+            if enc and conf and conf > 0.5:
+                file_group = "text"
+        except Exception:
+            pass
+
+    # Build set of indicators to skip based on file type.
+    # text / document are mutually exclusive — only one runs.
     image_exts = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".tif", ".avif"}
     skip_indicators: set[str] = set()
-    if file_group != "document":
-        # Non-document files: skip text + document
+    if file_group == "document":
+        # Document files: run document, skip text
+        if "text" in extract_list:
+            skip_indicators.add("text")
+    elif file_group == "text":
+        # Text files: run text (raw 1MB extraction), skip document
+        if "document" in extract_list:
+            skip_indicators.add("document")
+    else:
+        # Other files (audio, video, image, binary): skip both text + document
         for skip in ("text", "document"):
             if skip in extract_list:
                 skip_indicators.add(skip)
-        # Keep ocr for images; skip for other non-document types (audio, video, etc.)
-        if ext not in image_exts and "ocr" in extract_list:
-            skip_indicators.add("ocr")
-    else:
-        # Document files: skip text if not text group
-        if file_group != "text" and "text" in extract_list:
-            skip_indicators.add("text")
+    # Keep ocr only for document files and images; skip for text and other types
+    if file_group != "document" and ext not in image_exts and "ocr" in extract_list:
+        skip_indicators.add("ocr")
     # Thumbnail only makes sense for document-type files
     if file_group != "document" and "thumbnail" in extract_list:
         skip_indicators.add("thumbnail")
@@ -358,7 +422,12 @@ def run_extraction(
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         future_map = {}
         for name in filtered_extract:
-            extract_fn = EXTRACTORS.get(name)
+            # For text files (file_group == "text"), use raw text extraction
+            # which bypasses the markitdown pipeline — just 1MB + chardet.
+            if name == "text" and file_group == "text":
+                extract_fn = lambda fp, fb, **kw: _extract_text_raw(fb)
+            else:
+                extract_fn = EXTRACTORS.get(name)
             if extract_fn:
                 future = pool.submit(extract_fn, file_path, file_bytes, **kwargs)
                 future_map[future] = name
