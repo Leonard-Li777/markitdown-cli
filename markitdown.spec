@@ -155,9 +155,14 @@ def _find_libpython():
     return None
 
 _binaries = []
-_libpython = _find_libpython()
-if _libpython:
-    _binaries.append((_libpython, "."))
+
+# NOTE: Python shared library is ALREADY collected by PyInstaller 6.x's
+# Analysis.assemble() via bindepend.get_python_library_path(). On macOS
+# framework builds it even preserves the framework bundle structure
+# (Python.framework/Versions/3.x/Python) and creates the required symlink.
+# DO NOT add it manually here — doing so creates a conflicting TOC entry
+# that can overwrite the symlink at COLLECT time, causing PYI-7989/PYI-5875
+# 'Failed to load Python shared library' at runtime.
 
 # On Linux, lxml needs libxml2 and libxslt bundled (they're dynamically linked)
 if sys.platform == "linux":
