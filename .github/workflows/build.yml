@@ -79,15 +79,23 @@ jobs:
         run: python3 -m PyInstaller --version
 
       - name: Build
-        run: python scripts/build.py --skip-deps
+        env:
+          # Avoid onnxruntime device scan noise/hangs during PyInstaller analysis
+          ORT_DISABLE_DEVICE_DISCOVERY: "1"
+        run: python scripts/build.py --skip-deps --skip-tesseract --skip-exiftool
 
-      - name: Debug base_library.zip (Linux)
-        if: startsWith(matrix.platform, 'linux')
+      - name: Debug base_library.zip
+        shell: bash
         run: |
-          if [ -f dist/_internal/base_library.zip ]; then
-            python3 -c "import zipfile,zlib; z=zipfile.ZipFile('dist/_internal/base_library.zip'); n=sorted(z.namelist()); h=any(x.startswith('encodings/') for x in n); print('encodings in zip:',h); [print(' ',x) for x in n[:40]]"
+          ZIP=""
+          for candidate in dist/_internal/base_library.zip dist/markitdown/_internal/base_library.zip; do
+            if [ -f "$candidate" ]; then ZIP="$candidate"; break; fi
+          done
+          if [ -n "$ZIP" ]; then
+            python3 -c "import zipfile; z=zipfile.ZipFile('$ZIP'); n=sorted(z.namelist()); h=any(x.startswith('encodings/') for x in n); print('zip:', '$ZIP'); print('encodings in zip:', h); [print(' ', x) for x in n[:40]]"
           else
-            echo "no base_library.zip"
+            echo "no base_library.zip (checked dist/_internal/ and dist/markitdown/_internal/)"
+            find dist -name 'base_library.zip' 2>/dev/null || true
           fi
 
       - name: Smoke test
@@ -122,6 +130,18 @@ jobs:
 
           echo "=== Check encodings data dir ==="
           find dist/ -type d -name 'encodings' 2>/dev/null || echo "no encodings dir found"
+
+          echo "=== Check encodings in base_library.zip ==="
+          ZIP=""
+          for candidate in dist/_internal/base_library.zip dist/markitdown/_internal/base_library.zip; do
+            if [ -f "$candidate" ]; then ZIP="$candidate"; break; fi
+          done
+          if [ -n "$ZIP" ]; then
+            python3 -c "import zipfile,sys; z=zipfile.ZipFile('$ZIP'); ok=any(n.startswith('encodings/') for n in z.namelist()); print('encodings in zip:', ok); sys.exit(0 if ok else 1)"
+          else
+            echo "FAIL: base_library.zip not found"
+            exit 1
+          fi
 
           echo "=== Run --help ==="
           "$EXE" --help

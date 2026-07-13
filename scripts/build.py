@@ -27,6 +27,7 @@ import argparse
 import os
 import platform
 import shutil
+import signal
 import ssl
 import stat
 import subprocess
@@ -346,6 +347,76 @@ def setup_tesseract_macos(tesseract_dir: Path):
 # ---------------------------------------------------------------------------
 # Step 3 — PyInstaller build
 # ---------------------------------------------------------------------------
+def _pyinstaller_boot_exe() -> Path:
+    name = "_markitdown_boot.exe" if SYSTEM == "Windows" else "_markitdown_boot"
+    return DIST_DIR / "markitdown" / name
+
+
+def _bundled_internal_dir() -> Path | None:
+    """Return PyInstaller _internal/ dir (pre-flatten or post-flatten)."""
+    for candidate in (DIST_DIR / "markitdown" / "_internal", DIST_DIR / "_internal"):
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def _run_pyinstaller(timeout: int = 600) -> subprocess.CompletedProcess:
+    """Run PyInstaller with a hard timeout.
+
+    On Unix, PyInstaller's cache-cleanup step can hang indefinitely on CI
+    (python-build-standalone).  We kill the whole process group on timeout;
+    build artefacts in dist/ are already written by then.
+    """
+    cmd = [
+        sys.executable, "-m", "PyInstaller",
+        str(REPO_ROOT / "markitdown.spec"),
+        "--noconfirm",
+    ]
+    info("Running PyInstaller...")
+    kwargs = dict(cwd=str(REPO_ROOT), capture_output=True, text=True)
+    if os.name == "nt":
+        try:
+            return subprocess.run(cmd, timeout=timeout, check=False, **kwargs)
+        except subprocess.TimeoutExpired as e:
+            warn("PyInstaller timed out (cleanup hang?) — checking artifacts anyway")
+            return subprocess.CompletedProcess(
+                cmd, 0, e.stdout or "", e.stderr or "",
+            )
+
+    proc = subprocess.Popen(
+        cmd,
+        preexec_fn=os.setsid,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        cwd=str(REPO_ROOT),
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+        return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+    except subprocess.TimeoutExpired:
+        warn("PyInstaller timed out (cleanup hang?) — killing process group")
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, OSError):
+            proc.kill()
+        proc.wait(timeout=30)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+
+def _verify_pyinstaller_output() -> None:
+    boot = _pyinstaller_boot_exe()
+    internal = _bundled_internal_dir()
+    if boot.is_file() and internal is not None:
+        ok(f"Executable: {boot} ({boot.stat().st_size // (1024 * 1024)} MB)")
+        return
+    if internal is not None:
+        warn(f"Boot binary missing at {boot}, but _internal/ exists")
+    else:
+        warn("PyInstaller output not found in dist/markitdown/")
+    fail("PyInstaller did not produce expected onedir bundle")
+
+
 def build_markitdown(onefile: bool):
     info("Installing Python build dependencies...")
     subprocess.run(
@@ -369,35 +440,33 @@ def build_markitdown(onefile: bool):
         )
         ok(f"{name} installed from submodule")
 
-    info("Running PyInstaller...")
-    cmd = [
-        sys.executable, "-m", "PyInstaller",
-        str(REPO_ROOT / "markitdown.spec"),
-        "--clean", "--noconfirm",
-    ]
-    # On python-build-standalone, the cleanup phase can hang indefinitely.
-    # A 10-minute timeout is long enough for any real build; if cleanup
-    # hangs the build artefacts are still valid.
-    try:
-        result = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=600)
-    except subprocess.TimeoutExpired as e:
-        warn("PyInstaller timed out (cleanup hang?) — checking artifacts anyway")
-        result = subprocess.CompletedProcess(cmd, 0, e.stdout or "", e.stderr or "")
+    result = _run_pyinstaller()
     if result.returncode != 0:
         print(result.stdout[-2000:] if result.stdout else "")
         print(result.stderr[-2000:] if result.stderr else "", file=sys.stderr)
         result.check_returncode()
-
-    exe = DIST_DIR / "markitdown" / ("_markitdown_boot.exe" if SYSTEM == "Windows" else "_markitdown_boot")
-    if exe.exists():
-        ok(f"Executable: {exe} ({exe.stat().st_size // (1024*1024)} MB)")
-    else:
-        warn("Executable not found after build")
+    _verify_pyinstaller_output()
 
 
 # ---------------------------------------------------------------------------
 # Post-build: ensure encodings is inside base_library.zip
 # ---------------------------------------------------------------------------
+def _encodings_source_dir(internal: Path) -> Path | None:
+    """Locate encodings/ files to inject into base_library.zip."""
+    bundled = internal / "encodings"
+    if bundled.is_dir():
+        return bundled
+    try:
+        import encodings as _encodings_mod
+        system_dir = Path(_encodings_mod.__file__).resolve().parent
+        if system_dir.is_dir():
+            info(f"Using system encodings from {system_dir}")
+            return system_dir
+    except ImportError:
+        pass
+    return None
+
+
 def ensure_encodings_in_zip():
     """Inject encodings/ into base_library.zip if missing.
 
@@ -407,14 +476,22 @@ def ensure_encodings_in_zip():
     _internal/).  If python-build-standalone's non-standard stdlib layout
     caused PyInstaller Analysis to miss encodings for the zip, we patch it
     here from the datas-bundled _internal/encodings/ directory.
+
+    Must run BEFORE flatten (dist/markitdown/_internal/), not after.
     """
-    zip_path = DIST_DIR / "_internal" / "base_library.zip"
-    enc_dir = DIST_DIR / "_internal" / "encodings"
-    if not zip_path.is_file():
-        warn("base_library.zip not found — skipping encodings injection")
+    internal = _bundled_internal_dir()
+    if internal is None:
+        warn("No _internal/ directory found — skipping encodings injection")
         return
-    if not enc_dir.is_dir():
-        warn("_internal/encodings/ not found — skipping injection")
+
+    zip_path = internal / "base_library.zip"
+    if not zip_path.is_file():
+        warn(f"base_library.zip not found at {zip_path} — skipping encodings injection")
+        return
+
+    enc_dir = _encodings_source_dir(internal)
+    if enc_dir is None:
+        warn("encodings/ source not found — skipping injection")
         return
 
     with zipfile.ZipFile(str(zip_path), "r") as z:
@@ -513,16 +590,12 @@ def main():
         if not args.skip_deps:
             build_markitdown(args.onefile)
         else:
-            info("Running PyInstaller (skip deps)...")
-            try:
-                subprocess.run(
-                    [sys.executable, "-m", "PyInstaller",
-                     str(REPO_ROOT / "markitdown.spec"),
-                     "--clean", "--noconfirm"],
-                    cwd=str(REPO_ROOT), check=True, timeout=600,
-                )
-            except subprocess.TimeoutExpired:
-                warn("PyInstaller timed out (cleanup hang?) — checking artifacts anyway")
+            result = _run_pyinstaller()
+            if result.returncode != 0:
+                print(result.stdout[-2000:] if result.stdout else "")
+                print(result.stderr[-2000:] if result.stderr else "", file=sys.stderr)
+                result.check_returncode()
+            _verify_pyinstaller_output()
 
         # Post-build: ensure encodings is in base_library.zip (python-build-standalone
         # may produce an incomplete zip, causing PYI-7634 at startup)

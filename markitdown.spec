@@ -208,6 +208,16 @@ a = Analysis(
     binaries=_binaries,
     datas=datas,
     hiddenimports=[
+        # Stdlib — must be in base_library.zip for Py_InitializeFromConfig
+        'encodings',
+        'encodings.utf_8',
+        'encodings.aliases',
+        'encodings.idna',
+        'encodings.mbcs',
+        'encodings.ascii',
+        'encodings.latin_1',
+        'codecs',
+
         # Core markitdown
         'markitdown',
         'markitdown.__main__',
