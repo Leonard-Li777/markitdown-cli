@@ -13,9 +13,18 @@
 
 import os
 import sys
+import sysconfig
 from pathlib import Path
 
 _MAGIKA_DIR = None
+
+# On python-build-standalone (astral-sh), the stdlib is at a non-standard path.
+# PyInstaller's Analysis will NOT find it during the module scan unless we add
+# it to pathex.  This is critical for base_library.zip: core modules like
+# encodings must be collected into the zip, otherwise Py_InitializeFromConfig
+# fails with "Failed to import encodings module".
+_stdlib = sysconfig.get_path("stdlib") or ""
+_platstdlib = sysconfig.get_path("platstdlib") or ""
 try:
     import magika
     _MAGIKA_DIR = os.path.dirname(magika.__file__)
@@ -195,7 +204,7 @@ if sys.platform == "linux":
 
 a = Analysis(
     ['scripts/markitdown_cli_wrapper.py'],
-    pathex=[],
+    pathex=[p for p in (_stdlib, _platstdlib) if p],
     binaries=_binaries,
     datas=datas,
     hiddenimports=[

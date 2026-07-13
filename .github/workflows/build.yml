@@ -49,6 +49,7 @@ jobs:
     needs: select
     if: needs.select.outputs.matrix != '[]'
     strategy:
+      fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.select.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
