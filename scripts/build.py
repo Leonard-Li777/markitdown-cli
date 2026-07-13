@@ -408,6 +408,11 @@ def _run_pyinstaller(
     popen_kwargs: dict = {"cwd": str(REPO_ROOT)}
     if os.name != "nt":
         popen_kwargs["preexec_fn"] = os.setsid
+    # Unbuffer PyInstaller's stdout so log entries are visible immediately
+    # (when stdout is redirected to a file, Python defaults to 8KB buffering)
+    _env = dict(os.environ)
+    _env["PYTHONUNBUFFERED"] = "1"
+    popen_kwargs["env"] = _env
 
     with open(log_path, "w", encoding="utf-8", errors="replace") as log:
         popen_kwargs["stdout"] = log
