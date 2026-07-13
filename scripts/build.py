@@ -394,6 +394,7 @@ def _run_pyinstaller(
         proc = subprocess.Popen(cmd, **popen_kwargs)
         start = time.monotonic()
         cleanup_since: float | None = None
+        last_progress_report = 0.0
 
         while True:
             rc = proc.poll()
@@ -404,6 +405,15 @@ def _run_pyinstaller(
 
             boot_ready = _pyinstaller_boot_exe().is_file()
             elapsed = time.monotonic() - start
+            if elapsed - last_progress_report >= 60:
+                mins = int(elapsed // 60)
+                secs = int(elapsed % 60)
+                phase = "cleanup" if boot_ready else "build"
+                info(
+                    f"PyInstaller still running "
+                    f"({phase}, elapsed={mins:02d}:{secs:02d}, log={log_path})"
+                )
+                last_progress_report = elapsed
 
             if boot_ready:
                 if cleanup_since is None:

@@ -349,6 +349,10 @@ exe = EXE(
     pyz,
     a.scripts,
     [],
+    # This is a COLLECT/onedir build; keep binaries outside the executable.
+    # Otherwise the bootloader behaves more like onefile and looks in _MEI...
+    # for the Python shared library, which breaks our flattened onedir layout.
+    exclude_binaries=True,
     name='_markitdown_boot',
     debug=False,
     bootloader_ignore_signals=False,
