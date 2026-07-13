@@ -80,6 +80,15 @@ jobs:
       - name: Build
         run: python scripts/build.py --skip-deps
 
+      - name: Debug base_library.zip (Linux)
+        if: startsWith(matrix.platform, 'linux')
+        run: |
+          if [ -f dist/_internal/base_library.zip ]; then
+            python3 -c "import zipfile,zlib; z=zipfile.ZipFile('dist/_internal/base_library.zip'); n=sorted(z.namelist()); h=any(x.startswith('encodings/') for x in n); print('encodings in zip:',h); [print(' ',x) for x in n[:40]]"
+          else
+            echo "no base_library.zip"
+          fi
+
       - name: Smoke test
         shell: bash
         run: |
@@ -108,20 +117,6 @@ jobs:
           echo "=== Check certifi CA bundle is bundled ==="
           if ! find dist/ -name 'cacert.pem' | grep -q .; then
             echo "WARN: cacert.pem not found — HTTPS may fail"
-          fi
-
-          echo "=== Check base_library.zip for encodings ==="
-          if [ -f dist/_internal/base_library.zip ]; then
-            python3 -c "
-import zipfile
-z = zipfile.ZipFile('dist/_internal/base_library.zip')
-names = z.namelist()
-has_encodings = any(n.startswith('encodings/') for n in names)
-print('encodings in base_library.zip:', has_encodings)
-if not has_encodings:
-    for n in sorted(names)[:40]:
-        print(' ', n)
-" || echo "ZIP check skipped"
           fi
 
           echo "=== Check encodings data dir ==="
