@@ -53,20 +53,31 @@ def _find_libpython():
     libdir = sysconfig.get_config_var("LIBDIR")
     base = sysconfig.get_config_var("base") or sysconfig.get_config_var("installed_base") or ""
 
-    # Primary: LDLIBRARY (Linux .so, macOS framework name)
+    # LDLIBRARY (e.g. libpython3.13.so.1.0, libpython3.13.dylib, python313.dll)
     ldlib = sysconfig.get_config_var("LDLIBRARY")
     if libdir and ldlib:
         candidates.append(os.path.join(libdir, ldlib))
 
-    # Alternate: INSTSONAME (e.g. libpython3.13.so.1.0 or Python)
+    # INSTSONAME
     instsoname = sysconfig.get_config_var("INSTSONAME")
     if libdir and instsoname:
         candidates.append(os.path.join(libdir, instsoname))
 
-    # Search base/lib/ — covers actions/setup-python, brew, framework installs
-    for search_dir in dict.fromkeys([libdir, os.path.join(base, "lib")]):
-        if not search_dir or not os.path.isdir(search_dir):
-            continue
+    # Gather all plausible search directories
+    search_dirs = []
+    for d in (
+        libdir,
+        os.path.join(base, "lib"),
+        os.path.join(base, "lib64"),
+        sysconfig.get_path("data"),       # e.g. /usr/local or framework root
+        sysconfig.get_path("platlib"),     # e.g. /usr/local/lib/python3.13/site-packages
+        os.path.join(sys.prefix, "lib"),   # fallback: sys.prefix
+        os.path.join(sys.exec_prefix, "lib"),
+    ):
+        if d and d not in search_dirs and os.path.isdir(d):
+            search_dirs.append(d)
+
+    for search_dir in search_dirs:
         for pattern in ("libpython*.dylib", "libpython*.so*", "Python"):
             candidates.extend(_glob.glob(os.path.join(search_dir, pattern)))
 
