@@ -84,18 +84,23 @@ jobs:
           ORT_DISABLE_DEVICE_DISCOVERY: "1"
         run: python scripts/build.py --skip-deps --skip-tesseract --skip-exiftool
 
-      - name: Debug base_library.zip
+      - name: Debug encodings bundle
         shell: bash
         run: |
+          echo "=== encodings layout ==="
+          find dist -type d -name 'encodings' 2>/dev/null | head -5 || true
           ZIP=""
           for candidate in dist/_internal/base_library.zip dist/markitdown/_internal/base_library.zip; do
             if [ -f "$candidate" ]; then ZIP="$candidate"; break; fi
           done
           if [ -n "$ZIP" ]; then
-            python3 -c "import zipfile; z=zipfile.ZipFile('$ZIP'); n=sorted(z.namelist()); h=any(x.startswith('encodings/') for x in n); print('zip:', '$ZIP'); print('encodings in zip:', h); [print(' ', x) for x in n[:40]]"
+            python3 -c "import zipfile; z=zipfile.ZipFile('$ZIP'); n=sorted(z.namelist()); h=any(x.startswith('encodings/') for x in n); print('zip:', '$ZIP'); print('encodings in zip:', h)"
           else
-            echo "no base_library.zip (checked dist/_internal/ and dist/markitdown/_internal/)"
-            find dist -name 'base_library.zip' 2>/dev/null || true
+            echo "no base_library.zip (noarchive mode — loose files expected)"
+          fi
+          if [ -f build/pyinstaller.log ]; then
+            echo "=== PyInstaller log tail ==="
+            tail -30 build/pyinstaller.log
           fi
 
       - name: Smoke test
@@ -131,15 +136,21 @@ jobs:
           echo "=== Check encodings data dir ==="
           find dist/ -type d -name 'encodings' 2>/dev/null || echo "no encodings dir found"
 
-          echo "=== Check encodings in base_library.zip ==="
+          echo "=== Check encodings available ==="
+          ENC_OK=0
+          if find dist/ -path '*/encodings/__init__.py' | grep -q .; then
+            echo "encodings loose files: OK"
+            ENC_OK=1
+          fi
           ZIP=""
           for candidate in dist/_internal/base_library.zip dist/markitdown/_internal/base_library.zip; do
             if [ -f "$candidate" ]; then ZIP="$candidate"; break; fi
           done
           if [ -n "$ZIP" ]; then
-            python3 -c "import zipfile,sys; z=zipfile.ZipFile('$ZIP'); ok=any(n.startswith('encodings/') for n in z.namelist()); print('encodings in zip:', ok); sys.exit(0 if ok else 1)"
-          else
-            echo "FAIL: base_library.zip not found"
+            python3 -c "import zipfile,sys; z=zipfile.ZipFile('$ZIP'); ok=any(n.startswith('encodings/') for n in z.namelist()); print('encodings in zip:', ok); sys.exit(0 if ok else 1)" && ENC_OK=1
+          fi
+          if [ "$ENC_OK" -eq 0 ]; then
+            echo "FAIL: encodings not found (neither loose dir nor base_library.zip)"
             exit 1
           fi
 

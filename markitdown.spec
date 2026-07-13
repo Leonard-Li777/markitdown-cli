@@ -338,7 +338,7 @@ a = Analysis(
         'numpy.distutils', 'numpy.testing',
         'h2', 'hpack', 'hyperframe', 'priority',
     ],
-    noarchive=False,
+    noarchive=True,
 )
 
 pyz = PYZ(a.pure, a.zipped_data)

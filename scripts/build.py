@@ -32,6 +32,7 @@ import ssl
 import stat
 import subprocess
 import sys
+import time
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -360,48 +361,83 @@ def _bundled_internal_dir() -> Path | None:
     return None
 
 
-def _run_pyinstaller(timeout: int = 600) -> subprocess.CompletedProcess:
-    """Run PyInstaller with a hard timeout.
+def _run_pyinstaller(
+    timeout_build: int = 3600,
+    timeout_cleanup: int = 180,
+) -> subprocess.CompletedProcess:
+    """Run PyInstaller with build/cleanup-aware timeouts.
 
-    On Unix, PyInstaller's cache-cleanup step can hang indefinitely on CI
-    (python-build-standalone).  We kill the whole process group on timeout;
-    build artefacts in dist/ are already written by then.
+    Never capture stdout/stderr to PIPE — PyInstaller's verbose output can
+    fill OS pipe buffers (~64 KiB) and deadlock the build before dist/ exists.
+
+    Once dist/markitdown/_markitdown_boot exists the bundle is complete; if
+    PyInstaller then hangs in cache cleanup (common on python-build-standalone)
+    we kill it after timeout_cleanup seconds.
     """
     cmd = [
         sys.executable, "-m", "PyInstaller",
         str(REPO_ROOT / "markitdown.spec"),
         "--noconfirm",
+        "--log-level=WARN",
     ]
     info("Running PyInstaller...")
-    kwargs = dict(cwd=str(REPO_ROOT), capture_output=True, text=True)
-    if os.name == "nt":
-        try:
-            return subprocess.run(cmd, timeout=timeout, check=False, **kwargs)
-        except subprocess.TimeoutExpired as e:
-            warn("PyInstaller timed out (cleanup hang?) — checking artifacts anyway")
-            return subprocess.CompletedProcess(
-                cmd, 0, e.stdout or "", e.stderr or "",
-            )
+    log_path = REPO_ROOT / "build" / "pyinstaller.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    proc = subprocess.Popen(
-        cmd,
-        preexec_fn=os.setsid,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        cwd=str(REPO_ROOT),
-    )
-    try:
-        stdout, stderr = proc.communicate(timeout=timeout)
-        return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
-    except subprocess.TimeoutExpired:
-        warn("PyInstaller timed out (cleanup hang?) — killing process group")
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except (ProcessLookupError, OSError):
-            proc.kill()
+    popen_kwargs: dict = {"cwd": str(REPO_ROOT)}
+    if os.name != "nt":
+        popen_kwargs["preexec_fn"] = os.setsid
+
+    with open(log_path, "w", encoding="utf-8", errors="replace") as log:
+        popen_kwargs["stdout"] = log
+        popen_kwargs["stderr"] = subprocess.STDOUT
+        proc = subprocess.Popen(cmd, **popen_kwargs)
+        start = time.monotonic()
+        cleanup_since: float | None = None
+
+        while True:
+            rc = proc.poll()
+            if rc is not None:
+                log.write(f"\n[build.py] PyInstaller exited with code {rc}\n")
+                log.flush()
+                return subprocess.CompletedProcess(cmd, rc, "", "")
+
+            boot_ready = _pyinstaller_boot_exe().is_file()
+            elapsed = time.monotonic() - start
+
+            if boot_ready:
+                if cleanup_since is None:
+                    cleanup_since = time.monotonic()
+                    info("PyInstaller bundle ready — waiting for process exit")
+                elif time.monotonic() - cleanup_since > timeout_cleanup:
+                    warn(
+                        f"PyInstaller stuck after bundle ready "
+                        f"(>{timeout_cleanup}s) — killing process group"
+                    )
+                    _kill_process_group(proc)
+                    log.write("\n[build.py] killed after cleanup timeout\n")
+                    log.flush()
+                    return subprocess.CompletedProcess(cmd, 0, "", "")
+            elif elapsed > timeout_build:
+                warn(f"PyInstaller build timed out after {timeout_build}s")
+                _kill_process_group(proc)
+                log.write(f"\n[build.py] killed after build timeout ({timeout_build}s)\n")
+                log.flush()
+                return subprocess.CompletedProcess(cmd, 1, "", "")
+
+            time.sleep(5)
+
+
+def _kill_process_group(proc: subprocess.Popen) -> None:
+    if os.name == "nt":
+        proc.kill()
         proc.wait(timeout=30)
-        return subprocess.CompletedProcess(cmd, 0, "", "")
+        return
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except (ProcessLookupError, OSError):
+        proc.kill()
+    proc.wait(timeout=30)
 
 
 def _verify_pyinstaller_output() -> None:
@@ -442,8 +478,10 @@ def build_markitdown(onefile: bool):
 
     result = _run_pyinstaller()
     if result.returncode != 0:
-        print(result.stdout[-2000:] if result.stdout else "")
-        print(result.stderr[-2000:] if result.stderr else "", file=sys.stderr)
+        log_path = REPO_ROOT / "build" / "pyinstaller.log"
+        if log_path.is_file():
+            tail = log_path.read_text(encoding="utf-8", errors="replace")[-4000:]
+            print(tail, file=sys.stderr)
         result.check_returncode()
     _verify_pyinstaller_output()
 
@@ -468,20 +506,20 @@ def _encodings_source_dir(internal: Path) -> Path | None:
 
 
 def ensure_encodings_in_zip():
-    """Inject encodings/ into base_library.zip if missing.
+    """Ensure encodings is available for the PyInstaller bootloader.
 
-    The PyInstaller bootloader calls Py_InitializeFromConfig with
-    module_search_paths_set=1, so PYTHONPATH/PYTHONHOME are ignored.
-    It searches for encodings inside base_library.zip (and possibly
-    _internal/).  If python-build-standalone's non-standard stdlib layout
-    caused PyInstaller Analysis to miss encodings for the zip, we patch it
-    here from the datas-bundled _internal/encodings/ directory.
-
-    Must run BEFORE flatten (dist/markitdown/_internal/), not after.
+    With noarchive=True (spec), stdlib modules live as loose files under
+    _internal/encodings/.  With noarchive=False, they must be inside
+    base_library.zip — we inject them if Analysis missed them.
     """
     internal = _bundled_internal_dir()
     if internal is None:
-        warn("No _internal/ directory found — skipping encodings injection")
+        warn("No _internal/ directory found — skipping encodings check")
+        return
+
+    loose = internal / "encodings"
+    if loose.is_dir() and any(loose.iterdir()):
+        ok("encodings present as loose files in _internal/encodings/")
         return
 
     zip_path = internal / "base_library.zip"
@@ -592,8 +630,10 @@ def main():
         else:
             result = _run_pyinstaller()
             if result.returncode != 0:
-                print(result.stdout[-2000:] if result.stdout else "")
-                print(result.stderr[-2000:] if result.stderr else "", file=sys.stderr)
+                log_path = REPO_ROOT / "build" / "pyinstaller.log"
+                if log_path.is_file():
+                    tail = log_path.read_text(encoding="utf-8", errors="replace")[-4000:]
+                    print(tail, file=sys.stderr)
                 result.check_returncode()
             _verify_pyinstaller_output()
 
@@ -659,48 +699,25 @@ def main():
                 shutil.move(str(item), str(DIST_DIR))
             shutil.rmtree(str(app_dir), ignore_errors=True)
 
-            # Rename _markitdown_boot → markitdown (or .exe on Windows)
+            # Rename _markitdown_boot → markitdown (or .exe on Windows).
+            # Do NOT set PYTHONPATH to base_library.zip — that makes Python treat
+            # the zip as a filesystem directory (NotADirectoryError / missing encodings).
             boot = DIST_DIR / ("_markitdown_boot.exe" if SYSTEM == "Windows" else "_markitdown_boot")
             final = DIST_DIR / ("markitdown.exe" if SYSTEM == "Windows" else "markitdown")
             if boot.exists():
-                if SYSTEM == "Windows":
-                    shutil.move(str(boot), str(final))
-                elif SYSTEM == "Darwin":
-                    # macOS: create a shell wrapper that sets DYLD_LIBRARY_PATH
-                    # and PYTHONPATH so the bootloader can find both the shared
-                    # library and the standard library (encodings etc.).
-                    wrapper = DIST_DIR / "markitdown"
-                    wrapper.write_text(
-                        "#!/bin/bash\n"
-                        f'export DYLD_LIBRARY_PATH="${{0%/*}}/_internal:${{DYLD_LIBRARY_PATH:+$DYLD_LIBRARY_PATH}}"\n'
-                        f'export PYTHONPATH="${{0%/*}}/_internal:${{0%/*}}/_internal/base_library.zip${{PYTHONPATH:+:$PYTHONPATH}}"\n'
-                        f'exec "${{0%/*}}/{boot.name}" "$@"\n'
+                if SYSTEM == "Darwin" and shutil.which("install_name_tool"):
+                    subprocess.run(
+                        ["install_name_tool", "-add_rpath", "@executable_path/_internal", str(boot)],
+                        check=False,
+                        capture_output=True,
                     )
-                    wrapper.chmod(0o755)
-                else:
-                    # Linux: use patchelf to set rpath so dlopen finds libpython
-                    # in _internal/ without needing LD_LIBRARY_PATH, AND create
-                    # a shell wrapper to set PYTHONPATH so the bootloader can
-                    # find the standard library (encodings etc.) during early
-                    # Py_InitializeFromConfig — even if module_search_paths_set=1
-                    # ignores PYTHONPATH, setting it before exec gives the
-                    # bootloader a chance to append it to its own paths.
-                    _rpath = "$ORIGIN/_internal"
-                    if shutil.which("patchelf"):
-                        subprocess.run(
-                            ["patchelf", "--set-rpath", _rpath, str(boot)],
-                            check=False,
-                        )
-                    else:
-                        warn("patchelf not found; LD_LIBRARY_PATH may be needed at runtime.")
-                    wrapper = DIST_DIR / "markitdown"
-                    wrapper.write_text(
-                        "#!/bin/bash\n"
-                        f'export LD_LIBRARY_PATH="${{0%/*}}/_internal:${{LD_LIBRARY_PATH:+$LD_LIBRARY_PATH}}"\n'
-                        f'export PYTHONPATH="${{0%/*}}/_internal:${{0%/*}}/_internal/base_library.zip${{PYTHONPATH:+:$PYTHONPATH}}"\n'
-                        f'exec "${{0%/*}}/{boot.name}" "$@"\n'
+                elif SYSTEM == "Linux" and shutil.which("patchelf"):
+                    subprocess.run(
+                        ["patchelf", "--set-rpath", "$ORIGIN/_internal", str(boot)],
+                        check=False,
+                        capture_output=True,
                     )
-                    wrapper.chmod(0o755)
+                shutil.move(str(boot), str(final))
                 ok("Renamed _markitdown_boot -> markitdown")
             ok("Flattened dist/markitdown/ -> dist/")
 
