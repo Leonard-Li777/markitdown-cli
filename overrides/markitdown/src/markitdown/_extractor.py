@@ -17,8 +17,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Optional
 
-import magika
-
 from ._router import route_document, lightweight_xlsx_text_extract
 from ._thumbnail import extract_thumbnails
 
@@ -28,6 +26,8 @@ _MAGIKA = None
 def _get_magika():
     global _MAGIKA
     if _MAGIKA is None:
+        import magika
+
         _MAGIKA = magika.Magika()
     return _MAGIKA
 

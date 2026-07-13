@@ -12,7 +12,6 @@ from pathlib import Path
 from urllib.parse import urlparse
 from warnings import warn
 import requests
-import magika
 import charset_normalizer
 import codecs
 
@@ -53,6 +52,14 @@ PRIORITY_SPECIFIC_FILE_FORMAT = 0.0
 PRIORITY_GENERIC_FILE_FORMAT = 10.0
 
 _plugins: Union[None, List[Any]] = None
+
+
+def _create_magika():
+    # Import lazily: importing `magika` pulls in `onnxruntime`, which can make
+    # PyInstaller analysis on Linux extremely slow or hang in CI.
+    import magika
+
+    return magika.Magika()
 
 
 def _load_plugins() -> Union[None, List[Any]]:
@@ -114,7 +121,7 @@ class MarkItDown:
         else:
             self._requests_session = requests_session
 
-        self._magika = magika.Magika()
+        self._magika = None
 
         self._llm_client: Any = None
         self._llm_model: Union[str | None] = None
@@ -463,6 +470,8 @@ class MarkItDown:
 
         cur_pos = file_stream.tell()
         try:
+            if self._magika is None:
+                self._magika = _create_magika()
             result = self._magika.identify_stream(file_stream)
             if result.status == "ok" and result.prediction.output.label != "unknown":
                 charset = None
