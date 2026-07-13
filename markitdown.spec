@@ -44,34 +44,27 @@ if _MAGIKA_DIR:
             datas.append((src, rel))
 
 # Explicitly collect libpython shared library to avoid PYI-2973 (Linux/macOS)
-import sysconfig, glob as _glob
+import sysconfig, glob as _glob, subprocess, ctypes.util
 
-def _find_libpython():
-    """Find the libpython shared library across platforms."""
-    candidates = []
-
+def _collect_sysconfig_candidates(candidates):
     libdir = sysconfig.get_config_var("LIBDIR")
     base = sysconfig.get_config_var("base") or sysconfig.get_config_var("installed_base") or ""
 
-    # LDLIBRARY (e.g. libpython3.13.so.1.0, libpython3.13.dylib, python313.dll)
     ldlib = sysconfig.get_config_var("LDLIBRARY")
     if libdir and ldlib:
         candidates.append(os.path.join(libdir, ldlib))
 
-    # INSTSONAME
     instsoname = sysconfig.get_config_var("INSTSONAME")
     if libdir and instsoname:
         candidates.append(os.path.join(libdir, instsoname))
 
-    # Gather all plausible search directories
     search_dirs = []
     for d in (
         libdir,
         os.path.join(base, "lib"),
         os.path.join(base, "lib64"),
-        sysconfig.get_path("data"),       # e.g. /usr/local or framework root
-        sysconfig.get_path("platlib"),     # e.g. /usr/local/lib/python3.13/site-packages
-        os.path.join(sys.prefix, "lib"),   # fallback: sys.prefix
+        sysconfig.get_path("data"),
+        os.path.join(sys.prefix, "lib"),
         os.path.join(sys.exec_prefix, "lib"),
     ):
         if d and d not in search_dirs and os.path.isdir(d):
@@ -81,9 +74,57 @@ def _find_libpython():
         for pattern in ("libpython*.dylib", "libpython*.so*", "Python"):
             candidates.extend(_glob.glob(os.path.join(search_dir, pattern)))
 
+
+def _collect_ldconfig_candidates(candidates):
+    """Resolve the soname via ldconfig -p."""
+    try:
+        soname = ctypes.util.find_library(
+            f"python{sys.version_info.major}.{sys.version_info.minor}"
+        )
+        if not soname:
+            return
+        result = subprocess.run(
+            ["ldconfig", "-p"], capture_output=True, text=True, timeout=10
+        )
+        for line in result.stdout.splitlines():
+            if soname in line and "=>" in line:
+                path = line.split("=>")[-1].strip()
+                if path and path not in candidates:
+                    candidates.append(path)
+    except Exception:
+        pass
+
+
+def _collect_common_search_candidates(candidates):
+    """Recursive fallback in standard system library directories."""
+    soname = ctypes.util.find_library(
+        f"python{sys.version_info.major}.{sys.version_info.minor}"
+    )
+    if not soname:
+        return
+    for root in ("/usr/lib", "/usr/lib64", "/usr/local/lib", "/lib", "/lib64"):
+        if os.path.isdir(root):
+            for p in _glob.glob(os.path.join(root, "**", soname), recursive=True):
+                if p not in candidates:
+                    candidates.append(p)
+
+
+def _find_libpython():
+    """Find the libpython shared library across platforms."""
+    candidates = []
+
+    _collect_sysconfig_candidates(candidates)
+    _collect_ldconfig_candidates(candidates)
+    _collect_common_search_candidates(candidates)
+
     for p in candidates:
         if os.path.isfile(p):
             return os.path.realpath(p)
+
+    print(
+        "[WARN] libpython shared library not found — PYI-30798 may occur at runtime",
+        file=sys.stderr,
+    )
     return None
 
 _binaries = []
