@@ -14,9 +14,8 @@
 import os
 import sys
 import sysconfig
+import importlib.util
 from pathlib import Path
-
-_MAGIKA_DIR = None
 
 # On python-build-standalone (astral-sh), the stdlib is at a non-standard path.
 # PyInstaller's Analysis will NOT find it during the module scan unless we add
@@ -25,15 +24,41 @@ _MAGIKA_DIR = None
 # fails with "Failed to import encodings module".
 _stdlib = sysconfig.get_path("stdlib") or ""
 _platstdlib = sysconfig.get_path("platstdlib") or ""
-try:
-    import magika
-    _MAGIKA_DIR = os.path.dirname(magika.__file__)
-except ImportError:
-    pass
 
 block_cipher = None
 
 datas = []
+
+
+def _collect_package_as_datas(package_name):
+    """Collect a package tree as raw datas (pure file copy, NO binary analysis).
+
+    Uses importlib.util.find_spec() to locate the package without importing it,
+    so PyInstaller's static analysis never touches magika/onnxruntime.
+    The collected files land at the correct relative path in the bundle so that
+    Python's import system finds them at runtime.
+    """
+    collected = []
+    try:
+        spec = importlib.util.find_spec(package_name)
+        if spec and spec.origin:
+            pkg_dir = os.path.dirname(spec.origin)
+            if os.path.isdir(pkg_dir):
+                for root, _dirs, files in os.walk(pkg_dir):
+                    for f in files:
+                        src = os.path.join(root, f)
+                        rel = os.path.relpath(
+                            os.path.dirname(src),
+                            os.path.dirname(pkg_dir),
+                        )
+                        collected.append((src, rel))
+    except Exception:
+        print(
+            f"[WARN] Could not locate package '{package_name}' for manual "
+            f"collection — runtime import will fall back gracefully",
+            file=sys.stderr,
+        )
+    return collected
 
 # Include certifi CA bundle for HTTPS support
 try:
@@ -43,14 +68,6 @@ try:
         datas.append((_cacert, "certifi"))
 except ImportError:
     pass
-
-# Include magika model files (must be at magika/models/... relative to _MEIPASS)
-if _MAGIKA_DIR:
-    for root, dirs, files in os.walk(_MAGIKA_DIR):
-        for f in files:
-            src = os.path.join(root, f)
-            rel = os.path.relpath(os.path.dirname(src), os.path.dirname(_MAGIKA_DIR))
-            datas.append((src, rel))
 
 # Ensure encodings package is bundled as a directory (not just in base_library.zip)
 # python-build-standalone on CI may produce an incomplete base_library.zip, causing
@@ -66,6 +83,13 @@ try:
                 datas.append((src, rel))
 except ImportError:
     pass
+
+# Collect magika + onnxruntime as raw files via datas (NOT binaries).
+# PyInstaller's binary/shared-library analysis of onnxruntime hangs on Linux.
+# By keeping them in excludes and manually copying via datas, we bypass the
+# static scan entirely while still making the packages available at runtime.
+for _pkg in ("magika", "onnxruntime"):
+    datas.extend(_collect_package_as_datas(_pkg))
 
 # Explicitly collect libpython shared library to avoid PYI-2973 (Linux/macOS)
 import sysconfig, glob as _glob, subprocess, ctypes.util
@@ -306,7 +330,6 @@ a = Analysis(
         # General
         'bs4',
         'markdownify',
-        'magika',
         'charset_normalizer',
         'charset_normalizer._charset_normalizer',
         'certifi',
@@ -333,6 +356,7 @@ a = Analysis(
         'setuptools._distutils', 'youtube_transcript_api',
         'pytest', 'unittest', 'test', 'nose',
         'cv2', 'torch', 'tensorflow',
+        'magika', 'onnxruntime',
         'PIL._imagingtk', 'PIL.ImageTk', 'PIL.ImageGrab',
         'pandas.io.clipboard', 'pandas.io.sql',
         'numpy.distutils', 'numpy.testing',

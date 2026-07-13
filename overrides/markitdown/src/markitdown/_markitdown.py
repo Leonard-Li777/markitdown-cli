@@ -5,6 +5,7 @@ import sys
 import shutil
 import traceback
 import io
+import importlib
 from dataclasses import dataclass
 from importlib.metadata import entry_points
 from typing import Any, List, Dict, Optional, Union, BinaryIO
@@ -56,10 +57,13 @@ _plugins: Union[None, List[Any]] = None
 
 def _create_magika():
     # Import lazily: importing `magika` pulls in `onnxruntime`, which can make
-    # PyInstaller analysis on Linux extremely slow or hang in CI.
-    import magika
-
-    return magika.Magika()
+    # PyInstaller analysis on Linux extremely slow or hang in CI. We also allow
+    # the import to fail at runtime so the CLI can degrade gracefully.
+    try:
+        magika_module = importlib.import_module("magika")
+        return magika_module.Magika()
+    except Exception:
+        return False
 
 
 def _load_plugins() -> Union[None, List[Any]]:
@@ -472,6 +476,9 @@ class MarkItDown:
         try:
             if self._magika is None:
                 self._magika = _create_magika()
+            if self._magika is False:
+                guesses.append(enhanced_guess)
+                return guesses
             result = self._magika.identify_stream(file_stream)
             if result.status == "ok" and result.prediction.output.label != "unknown":
                 charset = None

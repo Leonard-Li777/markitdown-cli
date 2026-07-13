@@ -11,6 +11,7 @@ Supported indicators:
 from __future__ import annotations
 
 import base64
+import importlib
 import io
 import os
 import time
@@ -24,12 +25,16 @@ _MAGIKA = None
 
 
 def _get_magika():
+    """Lazy-load magika on demand. Returns None if magika is not available
+    (excluded from PyInstaller bundle or not installed)."""
     global _MAGIKA
     if _MAGIKA is None:
-        import magika
-
-        _MAGIKA = magika.Magika()
-    return _MAGIKA
+        try:
+            magika_module = importlib.import_module("magika")
+            _MAGIKA = magika_module.Magika()
+        except Exception:
+            _MAGIKA = False
+    return _MAGIKA if _MAGIKA is not False else None
 
 
 # ---------------------------------------------------------------------------
@@ -37,8 +42,10 @@ def _get_magika():
 # ---------------------------------------------------------------------------
 
 def extract_magika(file_bytes: bytes) -> dict:
-    """Identify file type using magika."""
+    """Identify file type using magika. Returns empty dict if magika is unavailable."""
     m = _get_magika()
+    if m is None:
+        return {}
     result = m.identify_bytes(file_bytes)
     return {
         "label": result.output.label,
