@@ -50,9 +50,11 @@ def _find_libpython():
     """Find the libpython shared library across platforms."""
     candidates = []
 
+    libdir = sysconfig.get_config_var("LIBDIR")
+    base = sysconfig.get_config_var("base") or sysconfig.get_config_var("installed_base") or ""
+
     # Primary: LDLIBRARY (Linux .so, macOS framework name)
     ldlib = sysconfig.get_config_var("LDLIBRARY")
-    libdir = sysconfig.get_config_var("LIBDIR")
     if libdir and ldlib:
         candidates.append(os.path.join(libdir, ldlib))
 
@@ -61,11 +63,12 @@ def _find_libpython():
     if libdir and instsoname:
         candidates.append(os.path.join(libdir, instsoname))
 
-    # macOS framework: look for .dylib alongside the framework
-    base = sysconfig.get_config_var("base") or sysconfig.get_config_var("installed_base")
-    if base:
-        for pattern in ("lib/libpython*.dylib", "lib/libpython*.so*"):
-            candidates.extend(_glob.glob(os.path.join(base, pattern)))
+    # Search base/lib/ — covers actions/setup-python, brew, framework installs
+    for search_dir in dict.fromkeys([libdir, os.path.join(base, "lib")]):
+        if not search_dir or not os.path.isdir(search_dir):
+            continue
+        for pattern in ("libpython*.dylib", "libpython*.so*", "Python"):
+            candidates.extend(_glob.glob(os.path.join(search_dir, pattern)))
 
     for p in candidates:
         if os.path.isfile(p):
