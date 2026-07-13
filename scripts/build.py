@@ -369,6 +369,19 @@ def _bundled_internal_dir() -> Path | None:
     return None
 
 
+def _tail_log(log_path: Path, n: int = 20) -> str:
+    """Return the last *n* lines of the PyInstaller log file."""
+    try:
+        if not log_path.is_file():
+            return ""
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+        tail = "".join(lines[-n:]).rstrip()
+        return tail
+    except Exception:
+        return ""
+
+
 def _run_pyinstaller(
     timeout_build: int = 3600,
     timeout_cleanup: int = 180,
@@ -386,7 +399,7 @@ def _run_pyinstaller(
         sys.executable, "-m", "PyInstaller",
         str(REPO_ROOT / "markitdown.spec"),
         "--noconfirm",
-        "--log-level=WARN",
+        "--log-level=INFO",
     ]
     info("Running PyInstaller...")
     log_path = REPO_ROOT / "build" / "pyinstaller.log"
@@ -419,8 +432,15 @@ def _run_pyinstaller(
                 phase = "cleanup" if boot_ready else "build"
                 info(
                     f"PyInstaller still running "
-                    f"({phase}, elapsed={mins:02d}:{secs:02d}, log={log_path})"
+                    f"({phase}, elapsed={mins:02d}:{secs:02d})"
                 )
+                # Dump last 20 lines of the log for diagnosis
+                tail = _tail_log(log_path, 20)
+                if tail:
+                    print(f"  ── log tail ──", file=sys.stderr)
+                    for line in tail.splitlines():
+                        print(f"  | {line}", file=sys.stderr)
+                    print(f"  ─────────────", file=sys.stderr)
                 last_progress_report = elapsed
 
             if boot_ready:
