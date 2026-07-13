@@ -70,6 +70,10 @@ jobs:
           pip install -e markitdown/packages/markitdown
           pip install -e markitdown/packages/markitdown-ocr
 
+      - name: Install patchelf (Linux)
+        if: startsWith(matrix.platform, 'linux')
+        run: sudo apt-get update && sudo apt-get install -y patchelf
+
       - name: Build
         run: python scripts/build.py --skip-deps
 

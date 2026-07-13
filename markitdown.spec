@@ -43,6 +43,21 @@ if _MAGIKA_DIR:
             rel = os.path.relpath(os.path.dirname(src), os.path.dirname(_MAGIKA_DIR))
             datas.append((src, rel))
 
+# Ensure encodings package is bundled as a directory (not just in base_library.zip)
+# python-build-standalone on CI may produce an incomplete base_library.zip, causing
+# PYI-30193 "Failed to import encodings module" during Py_InitializeFromConfig.
+try:
+    import encodings as _encodings_mod
+    _encodings_dir = os.path.dirname(_encodings_mod.__file__)
+    if _encodings_dir and os.path.isdir(_encodings_dir):
+        for root, dirs, files in os.walk(_encodings_dir):
+            for f in files:
+                src = os.path.join(root, f)
+                rel = os.path.relpath(os.path.dirname(src), os.path.dirname(_encodings_dir))
+                datas.append((src, rel))
+except ImportError:
+    pass
+
 # Explicitly collect libpython shared library to avoid PYI-2973 (Linux/macOS)
 import sysconfig, glob as _glob, subprocess, ctypes.util
 

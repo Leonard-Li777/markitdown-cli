@@ -526,20 +526,33 @@ def main():
             if boot.exists():
                 if SYSTEM == "Windows":
                     shutil.move(str(boot), str(final))
-                else:
-                    # macOS / Linux: create a shell wrapper that sets the
-                    # platform-specific library search path so the bootloader
-                    # can find the Python shared library. The bootloader
-                    # constructs <tmpdir>/<libname> where tmpdir is the
-                    # CArchive extraction dir, not the app dir.
-                    _lib_env = "DYLD_LIBRARY_PATH" if SYSTEM == "Darwin" else "LD_LIBRARY_PATH"
+                elif SYSTEM == "Darwin":
+                    # macOS: create a shell wrapper that sets DYLD_LIBRARY_PATH
+                    # and PYTHONPATH so the bootloader can find both the shared
+                    # library and the standard library (encodings etc.).
                     wrapper = DIST_DIR / "markitdown"
                     wrapper.write_text(
                         "#!/bin/bash\n"
-                        f'export {_lib_env}="${{0%/*}}/_internal:${{{_lib_env}:+${_lib_env}}}"\n'
+                        f'export DYLD_LIBRARY_PATH="${{0%/*}}/_internal:${{DYLD_LIBRARY_PATH:+$DYLD_LIBRARY_PATH}}"\n'
+                        f'export PYTHONPATH="${{0%/*}}/_internal:${{0%/*}}/_internal/base_library.zip${{PYTHONPATH:+:$PYTHONPATH}}"\n'
                         f'exec "${{0%/*}}/{boot.name}" "$@"\n'
                     )
                     wrapper.chmod(0o755)
+                else:
+                    # Linux: use patchelf to set rpath so dlopen finds libpython
+                    # in _internal/ WITHOUT affecting the bootloader's own path
+                    # resolution (which shell wrappers + exec break on
+                    # python-build-standalone, causing PYI-30193 encodings
+                    # errors).
+                    _rpath = "$ORIGIN/_internal"
+                    if shutil.which("patchelf"):
+                        subprocess.run(
+                            ["patchelf", "--set-rpath", _rpath, str(boot)],
+                            check=False,
+                        )
+                    else:
+                        warn("patchelf not found; LD_LIBRARY_PATH may be needed at runtime.")
+                    shutil.move(str(boot), str(final))
                 ok("Renamed _markitdown_boot -> markitdown")
             ok("Flattened dist/markitdown/ -> dist/")
 
