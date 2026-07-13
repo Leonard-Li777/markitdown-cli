@@ -141,7 +141,12 @@ def _find_libpython():
 
     for p in candidates:
         if os.path.isfile(p):
-            return os.path.realpath(p)
+            # Return the path as-is (do NOT resolve realpath) — PyInstaller needs the
+            # basename to match the soname the bootloader looks for. On macOS framework
+            # builds, libpython*.dylib is often a symlink to Python3/Python; resolving
+            # the symlink would cause PYI-5875 at runtime because the bootloader looks
+            # for libpython3.x.dylib, not Python3.
+            return p
 
     print(
         "[WARN] libpython shared library not found — PYI-30798 may occur at runtime",
