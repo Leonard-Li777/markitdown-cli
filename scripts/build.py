@@ -540,10 +540,12 @@ def main():
                     wrapper.chmod(0o755)
                 else:
                     # Linux: use patchelf to set rpath so dlopen finds libpython
-                    # in _internal/ WITHOUT affecting the bootloader's own path
-                    # resolution (which shell wrappers + exec break on
-                    # python-build-standalone, causing PYI-30193 encodings
-                    # errors).
+                    # in _internal/ without needing LD_LIBRARY_PATH, AND create
+                    # a shell wrapper to set PYTHONPATH so the bootloader can
+                    # find the standard library (encodings etc.) during early
+                    # Py_InitializeFromConfig — even if module_search_paths_set=1
+                    # ignores PYTHONPATH, setting it before exec gives the
+                    # bootloader a chance to append it to its own paths.
                     _rpath = "$ORIGIN/_internal"
                     if shutil.which("patchelf"):
                         subprocess.run(
@@ -552,7 +554,14 @@ def main():
                         )
                     else:
                         warn("patchelf not found; LD_LIBRARY_PATH may be needed at runtime.")
-                    shutil.move(str(boot), str(final))
+                    wrapper = DIST_DIR / "markitdown"
+                    wrapper.write_text(
+                        "#!/bin/bash\n"
+                        f'export LD_LIBRARY_PATH="${{0%/*}}/_internal:${{LD_LIBRARY_PATH:+$LD_LIBRARY_PATH}}"\n'
+                        f'export PYTHONPATH="${{0%/*}}/_internal:${{0%/*}}/_internal/base_library.zip${{PYTHONPATH:+:$PYTHONPATH}}"\n'
+                        f'exec "${{0%/*}}/{boot.name}" "$@"\n'
+                    )
+                    wrapper.chmod(0o755)
                 ok("Renamed _markitdown_boot -> markitdown")
             ok("Flattened dist/markitdown/ -> dist/")
 

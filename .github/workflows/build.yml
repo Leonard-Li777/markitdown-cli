@@ -74,6 +74,9 @@ jobs:
         if: startsWith(matrix.platform, 'linux')
         run: sudo apt-get update && sudo apt-get install -y patchelf
 
+      - name: Show PyInstaller version
+        run: python3 -m PyInstaller --version
+
       - name: Build
         run: python scripts/build.py --skip-deps
 
@@ -106,6 +109,23 @@ jobs:
           if ! find dist/ -name 'cacert.pem' | grep -q .; then
             echo "WARN: cacert.pem not found — HTTPS may fail"
           fi
+
+          echo "=== Check base_library.zip for encodings ==="
+          if [ -f dist/_internal/base_library.zip ]; then
+            python3 -c "
+import zipfile
+z = zipfile.ZipFile('dist/_internal/base_library.zip')
+names = z.namelist()
+has_encodings = any(n.startswith('encodings/') for n in names)
+print('encodings in base_library.zip:', has_encodings)
+if not has_encodings:
+    for n in sorted(names)[:40]:
+        print(' ', n)
+" || echo "ZIP check skipped"
+          fi
+
+          echo "=== Check encodings data dir ==="
+          find dist/ -type d -name 'encodings' 2>/dev/null || echo "no encodings dir found"
 
           echo "=== Run --help ==="
           "$EXE" --help
