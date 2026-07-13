@@ -82,7 +82,7 @@ jobs:
         env:
           # Avoid onnxruntime device scan noise/hangs during PyInstaller analysis
           ORT_DISABLE_DEVICE_DISCOVERY: "1"
-        run: python scripts/build.py --skip-deps --skip-tesseract --skip-exiftool
+        run: python -u scripts/build.py --skip-deps --skip-tesseract --skip-exiftool
 
       - name: Debug encodings bundle
         shell: bash

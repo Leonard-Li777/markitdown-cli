@@ -37,6 +37,14 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+try:
+    # GitHub Actions/non-TTY stdout is block-buffered by default. Force line
+    # buffering so our progress heartbeats are visible while PyInstaller runs.
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+except AttributeError:
+    pass
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DIST_DIR = REPO_ROOT / "dist"
 SUBMODULE_DIR = REPO_ROOT / "markitdown"
