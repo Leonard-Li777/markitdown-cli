@@ -524,18 +524,19 @@ def main():
             boot = DIST_DIR / ("_markitdown_boot.exe" if SYSTEM == "Windows" else "_markitdown_boot")
             final = DIST_DIR / ("markitdown.exe" if SYSTEM == "Windows" else "markitdown")
             if boot.exists():
-                if SYSTEM == "Windows" or SYSTEM == "Linux":
+                if SYSTEM == "Windows":
                     shutil.move(str(boot), str(final))
                 else:
-                    # macOS: create a shell wrapper that sets DYLD_LIBRARY_PATH
-                    # so the bootloader can find the Python shared library.
-                    # The bootloader constructs <tmpdir>/<libname> where tmpdir
-                    # is the CArchive extraction dir, not the app dir.
-                    _internal_dir = DIST_DIR / "_internal"
+                    # macOS / Linux: create a shell wrapper that sets the
+                    # platform-specific library search path so the bootloader
+                    # can find the Python shared library. The bootloader
+                    # constructs <tmpdir>/<libname> where tmpdir is the
+                    # CArchive extraction dir, not the app dir.
+                    _lib_env = "DYLD_LIBRARY_PATH" if SYSTEM == "Darwin" else "LD_LIBRARY_PATH"
                     wrapper = DIST_DIR / "markitdown"
                     wrapper.write_text(
                         "#!/bin/bash\n"
-                        'export DYLD_LIBRARY_PATH="${0%/*}/_internal:$DYLD_LIBRARY_PATH"\n'
+                        f'export {_lib_env}="${{0%/*}}/_internal:${{{_lib_env}:+${_lib_env}}}"\n'
                         f'exec "${{0%/*}}/{boot.name}" "$@"\n'
                     )
                     wrapper.chmod(0o755)
