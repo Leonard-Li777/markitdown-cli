@@ -26,6 +26,15 @@ block_cipher = None
 
 datas = []
 
+# Include certifi CA bundle for HTTPS support
+try:
+    import certifi as _certifi
+    _cacert = _certifi.where()
+    if os.path.isfile(_cacert):
+        datas.append((_cacert, "certifi"))
+except ImportError:
+    pass
+
 # Include magika model files (must be at magika/models/... relative to _MEIPASS)
 if _MAGIKA_DIR:
     for root, dirs, files in os.walk(_MAGIKA_DIR):
@@ -34,10 +43,53 @@ if _MAGIKA_DIR:
             rel = os.path.relpath(os.path.dirname(src), os.path.dirname(_MAGIKA_DIR))
             datas.append((src, rel))
 
+# Explicitly collect libpython shared library to avoid PYI-2973 (Linux/macOS)
+import sysconfig, glob as _glob
+
+def _find_libpython():
+    """Find the libpython shared library across platforms."""
+    candidates = []
+
+    # Primary: LDLIBRARY (Linux .so, macOS framework name)
+    ldlib = sysconfig.get_config_var("LDLIBRARY")
+    libdir = sysconfig.get_config_var("LIBDIR")
+    if libdir and ldlib:
+        candidates.append(os.path.join(libdir, ldlib))
+
+    # Alternate: INSTSONAME (e.g. libpython3.13.so.1.0 or Python)
+    instsoname = sysconfig.get_config_var("INSTSONAME")
+    if libdir and instsoname:
+        candidates.append(os.path.join(libdir, instsoname))
+
+    # macOS framework: look for .dylib alongside the framework
+    base = sysconfig.get_config_var("base") or sysconfig.get_config_var("installed_base")
+    if base:
+        for pattern in ("lib/libpython*.dylib", "lib/libpython*.so*"):
+            candidates.extend(_glob.glob(os.path.join(base, pattern)))
+
+    for p in candidates:
+        if os.path.isfile(p):
+            return os.path.realpath(p)
+    return None
+
+_binaries = []
+_libpython = _find_libpython()
+if _libpython:
+    _binaries.append((_libpython, "."))
+
+# On Linux, lxml needs libxml2 and libxslt bundled (they're dynamically linked)
+if sys.platform == "linux":
+    _lib_dir = sysconfig.get_config_var("LIBDIR") or ""
+    for _soname in ("libxml2.so.*", "libxslt.so.*"):
+        for _p in _glob.glob(os.path.join(_lib_dir, _soname)):
+            if os.path.isfile(_p):
+                _binaries.append((os.path.realpath(_p), "."))
+                break
+
 a = Analysis(
     ['scripts/markitdown_cli_wrapper.py'],
     pathex=[],
-    binaries=[],
+    binaries=_binaries,
     datas=datas,
     hiddenimports=[
         # Core markitdown
@@ -109,6 +161,7 @@ a = Analysis(
         'pdfminer.high_level',
         'pdfplumber',
         'fitz',
+        'fitz._fitz',
 
         # DOCX
         'mammoth',
@@ -129,6 +182,8 @@ a = Analysis(
         'markdownify',
         'magika',
         'charset_normalizer',
+        'charset_normalizer._charset_normalizer',
+        'certifi',
         'defusedxml',
         'markdown',
         'markdown.extensions',
@@ -137,6 +192,8 @@ a = Analysis(
         'markdown.extensions.codehilite',
         'markdown.extensions.sane_lists',
         'requests',
+        'urllib3',
+        'urllib3.util.retry',
         'olefile',
     ],
     hookspath=[],

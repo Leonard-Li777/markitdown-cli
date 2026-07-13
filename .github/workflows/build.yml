@@ -73,6 +73,38 @@ jobs:
       - name: Build
         run: python scripts/build.py --skip-deps
 
+      - name: Smoke test
+        shell: bash
+        run: |
+          echo "=== Check binary exists ==="
+          if [ "${{ matrix.platform }}" = "win32" ]; then
+            EXE="dist/markitdown.exe"
+          else
+            EXE="dist/markitdown"
+          fi
+          test -f "$EXE" || { echo "FAIL: $EXE not found"; exit 1; }
+
+          echo "=== Check libpython is bundled ==="
+          if [ "${{ matrix.platform }}" = "linux" ]; then
+            if ! find dist/ -name 'libpython3*.so*' | grep -q .; then
+              echo "FAIL: libpython .so not found in dist/"
+              exit 1
+            fi
+          elif [ "${{ matrix.platform }}" = "darwin" ]; then
+            if ! find dist/ -name 'libpython3*.dylib' | grep -q .; then
+              echo "FAIL: libpython .dylib not found in dist/"
+              exit 1
+            fi
+          fi
+
+          echo "=== Check certifi CA bundle is bundled ==="
+          if ! find dist/ -name 'cacert.pem' | grep -q .; then
+            echo "WARN: cacert.pem not found — HTTPS may fail"
+          fi
+
+          echo "=== Run --help ==="
+          "$EXE" --help
+
       - name: Create tar.gz archive
         if: matrix.ext == 'tar.gz'
         run: tar -czf "markitdown-bin-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz" -C dist .
