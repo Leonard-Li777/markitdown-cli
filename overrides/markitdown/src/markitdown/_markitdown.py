@@ -59,8 +59,13 @@ def _create_magika():
     # Import lazily: importing `magika` pulls in `onnxruntime`, which can make
     # PyInstaller analysis on Linux extremely slow or hang in CI. We also allow
     # the import to fail at runtime so the CLI can degrade gracefully.
+    #
+    # NOTE: the module name is constructed from parts so PyInstaller's static
+    # AST scanner CANNOT detect the string literal and will not trace the
+    # magika → onnxruntime dependency chain, avoiding the hang on Linux.
     try:
-        magika_module = importlib.import_module("magika")
+        _modname = "".join(["m", "a", "g", "i", "k", "a"])
+        magika_module = importlib.import_module(_modname)
         return magika_module.Magika()
     except Exception:
         return False

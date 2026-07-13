@@ -26,11 +26,17 @@ _MAGIKA = None
 
 def _get_magika():
     """Lazy-load magika on demand. Returns None if magika is not available
-    (excluded from PyInstaller bundle or not installed)."""
+    (excluded from PyInstaller bundle or not installed).
+
+    NOTE: the module name is constructed from parts so PyInstaller's static
+    AST scanner CANNOT detect the string literal and will not trace the
+    magika → onnxruntime dependency chain, avoiding the hang on Linux.
+    """
     global _MAGIKA
     if _MAGIKA is None:
         try:
-            magika_module = importlib.import_module("magika")
+            _modname = "".join(["m", "a", "g", "i", "k", "a"])
+            magika_module = importlib.import_module(_modname)
             _MAGIKA = magika_module.Magika()
         except Exception:
             _MAGIKA = False
