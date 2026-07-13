@@ -117,6 +117,28 @@ def _find_libpython():
     _collect_ldconfig_candidates(candidates)
     _collect_common_search_candidates(candidates)
 
+    # Direct ctypes.util.find_library result — this returns a full path on macOS,
+    # while the above functions may miss it (ldconfig doesn't exist on macOS,
+    # and _collect_common_search_candidates globs with the full path incorrectly).
+    try:
+        soname = ctypes.util.find_library(
+            f"python{sys.version_info.major}.{sys.version_info.minor}"
+        )
+        if soname and soname not in candidates:
+            candidates.append(soname)
+    except Exception:
+        pass
+
+    # macOS framework fallback: the shared lib is named "Python3" or "Python"
+    # at the root of the framework's version directory, not under lib/.
+    if sys.platform == "darwin":
+        for d in (sys.prefix, sys.exec_prefix):
+            if d and os.path.isdir(d):
+                for name in ("Python3", "Python"):
+                    p = os.path.join(d, name)
+                    if os.path.isfile(p) and p not in candidates:
+                        candidates.append(p)
+
     for p in candidates:
         if os.path.isfile(p):
             return os.path.realpath(p)

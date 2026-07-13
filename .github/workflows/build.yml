@@ -91,8 +91,9 @@ jobs:
               exit 1
             fi
           elif [ "${{ matrix.platform }}" = "darwin" ]; then
-            if ! find dist/ -name 'libpython3*.dylib' | grep -q .; then
-              echo "FAIL: libpython .dylib not found in dist/"
+            # macOS: accept libpython*.dylib (standard) or Python3/Python (framework build)
+            if ! find dist/ -name 'libpython3*.dylib' -o -name 'Python3' -o -name 'Python' | grep -q .; then
+              echo "FAIL: libpython (.dylib / Python3 / Python) not found in dist/"
               exit 1
             fi
           fi
