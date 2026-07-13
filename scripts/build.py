@@ -32,6 +32,7 @@ import stat
 import subprocess
 import sys
 import urllib.request
+import zipfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -374,7 +375,14 @@ def build_markitdown(onefile: bool):
         str(REPO_ROOT / "markitdown.spec"),
         "--clean", "--noconfirm",
     ]
-    result = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True)
+    # On python-build-standalone, the cleanup phase can hang indefinitely.
+    # A 10-minute timeout is long enough for any real build; if cleanup
+    # hangs the build artefacts are still valid.
+    try:
+        result = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=600)
+    except subprocess.TimeoutExpired as e:
+        warn("PyInstaller timed out (cleanup hang?) — checking artifacts anyway")
+        result = subprocess.CompletedProcess(cmd, 0, e.stdout or "", e.stderr or "")
     if result.returncode != 0:
         print(result.stdout[-2000:] if result.stdout else "")
         print(result.stderr[-2000:] if result.stderr else "", file=sys.stderr)
@@ -385,6 +393,56 @@ def build_markitdown(onefile: bool):
         ok(f"Executable: {exe} ({exe.stat().st_size // (1024*1024)} MB)")
     else:
         warn("Executable not found after build")
+
+
+# ---------------------------------------------------------------------------
+# Post-build: ensure encodings is inside base_library.zip
+# ---------------------------------------------------------------------------
+def ensure_encodings_in_zip():
+    """Inject encodings/ into base_library.zip if missing.
+
+    The PyInstaller bootloader calls Py_InitializeFromConfig with
+    module_search_paths_set=1, so PYTHONPATH/PYTHONHOME are ignored.
+    It searches for encodings inside base_library.zip (and possibly
+    _internal/).  If python-build-standalone's non-standard stdlib layout
+    caused PyInstaller Analysis to miss encodings for the zip, we patch it
+    here from the datas-bundled _internal/encodings/ directory.
+    """
+    zip_path = DIST_DIR / "_internal" / "base_library.zip"
+    enc_dir = DIST_DIR / "_internal" / "encodings"
+    if not zip_path.is_file():
+        warn("base_library.zip not found — skipping encodings injection")
+        return
+    if not enc_dir.is_dir():
+        warn("_internal/encodings/ not found — skipping injection")
+        return
+
+    with zipfile.ZipFile(str(zip_path), "r") as z:
+        existing = set(z.namelist())
+    has_enc = any(n.startswith("encodings/") for n in existing)
+    if has_enc:
+        ok("encodings already in base_library.zip")
+        return
+
+    info("Injecting encodings/ into base_library.zip...")
+    # Build a fresh zip with the existing content + encodings/
+    tmp = zip_path.with_suffix(".zip.tmp")
+    with zipfile.ZipFile(str(tmp), "w", zipfile.ZIP_DEFLATED) as zout:
+        # Copy existing entries
+        with zipfile.ZipFile(str(zip_path), "r") as zin:
+            for item in zin.infolist():
+                zout.writestr(item, zin.read(item.filename))
+        # Add encodings files
+        for root, dirs, files in os.walk(str(enc_dir)):
+            for fn in files:
+                src = os.path.join(root, fn)
+                rel = os.path.relpath(src, str(enc_dir))
+                arcname = f"encodings/{rel}"
+                zout.write(src, arcname)
+                if len(rel) < 60:
+                    info(f"  + {arcname}")
+    tmp.replace(zip_path)
+    ok("encodings injected into base_library.zip")
 
 
 # ---------------------------------------------------------------------------
@@ -456,12 +514,20 @@ def main():
             build_markitdown(args.onefile)
         else:
             info("Running PyInstaller (skip deps)...")
-            subprocess.run(
-                [sys.executable, "-m", "PyInstaller",
-                 str(REPO_ROOT / "markitdown.spec"),
-                 "--clean", "--noconfirm"],
-                cwd=str(REPO_ROOT), check=True,
-            )
+            try:
+                subprocess.run(
+                    [sys.executable, "-m", "PyInstaller",
+                     str(REPO_ROOT / "markitdown.spec"),
+                     "--clean", "--noconfirm"],
+                    cwd=str(REPO_ROOT), check=True, timeout=600,
+                )
+            except subprocess.TimeoutExpired:
+                warn("PyInstaller timed out (cleanup hang?) — checking artifacts anyway")
+
+        # Post-build: ensure encodings is in base_library.zip (python-build-standalone
+        # may produce an incomplete zip, causing PYI-7634 at startup)
+        print()
+        ensure_encodings_in_zip()
 
         # Step 3: bundle Tesseract into dist/markitdown/ (alongside _internal/)
         if not args.skip_tesseract:
