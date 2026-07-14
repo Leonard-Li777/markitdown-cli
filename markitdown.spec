@@ -179,7 +179,13 @@ def _find_libpython():
     _mark("ldconfig search")
     _collect_ldconfig_candidates(candidates)
     _mark("common search")
-    _collect_common_search_candidates(candidates)
+    # NOTE: _collect_common_search_candidates is INTENTIONALLY SKIPPED.
+    # It does recursive glob.glob("/usr/lib/**/libpython*.so*") which hangs
+    # indefinitely in CI container environments (GitHub Actions, Docker)
+    # due to filesystem traversal overhead. On python-build-standalone the
+    # library is NOT in standard system paths anyway; sysconfig + ldconfig
+    # searches above are sufficient, and PyInstaller 6.x auto-detection
+    # handles the rest.
 
     # Direct ctypes.util.find_library result — this returns a full path on macOS,
     # while the above functions may miss it (ldconfig doesn't exist on macOS,
