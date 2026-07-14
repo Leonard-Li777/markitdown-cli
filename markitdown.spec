@@ -30,6 +30,11 @@ block_cipher = None
 datas = []
 
 
+def _mark(label):
+    """Print a timestamped marker to stderr for diagnosing spec hangs."""
+    print(f"[spec] {label}", file=sys.stderr, flush=True)
+
+
 def _collect_package_as_datas(package_name):
     """Collect a package tree as raw datas (pure file copy, NO binary analysis).
 
@@ -60,6 +65,8 @@ def _collect_package_as_datas(package_name):
         )
     return collected
 
+_mark("start")
+
 # Include certifi CA bundle for HTTPS support
 try:
     import certifi as _certifi
@@ -68,6 +75,7 @@ try:
         datas.append((_cacert, "certifi"))
 except ImportError:
     pass
+_mark("certifi done")
 
 # Ensure encodings package is bundled as a directory (not just in base_library.zip)
 # python-build-standalone on CI may produce an incomplete base_library.zip, causing
@@ -83,13 +91,17 @@ try:
                 datas.append((src, rel))
 except ImportError:
     pass
+_mark("encodings done")
 
 # Collect magika + onnxruntime as raw files via datas (NOT binaries).
 # PyInstaller's binary/shared-library analysis of onnxruntime hangs on Linux.
 # By keeping them in excludes and manually copying via datas, we bypass the
 # static scan entirely while still making the packages available at runtime.
-for _pkg in ("magika", "onnxruntime"):
-    datas.extend(_collect_package_as_datas(_pkg))
+_mark("collecting magika")
+datas.extend(_collect_package_as_datas("magika"))
+_mark("collecting onnxruntime")
+datas.extend(_collect_package_as_datas("onnxruntime"))
+_mark("datas collection done")
 
 # Explicitly collect libpython shared library to avoid PYI-2973 (Linux/macOS)
 import sysconfig, glob as _glob, subprocess, ctypes.util
@@ -226,6 +238,7 @@ if sys.platform == "linux":
                 _binaries.append((os.path.realpath(_p), "."))
                 break
 
+_mark("entering Analysis")
 a = Analysis(
     ['scripts/markitdown_cli_wrapper.py'],
     pathex=[p for p in (_stdlib, _platstdlib) if p],
