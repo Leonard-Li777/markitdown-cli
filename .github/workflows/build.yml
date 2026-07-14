@@ -16,9 +16,9 @@ on:
         type: boolean
         default: true
       build_darwin_x64:
-        description: 'Build macOS x64 (disabled)'
+        description: 'Build macOS x64'
         type: boolean
-        default: false
+        default: true
       build_darwin_arm64:
         description: 'Build macOS arm64'
         type: boolean
@@ -41,7 +41,7 @@ jobs:
           [ "${{ inputs.build_win32 }}" = "true" ] && append '{"platform":"win32" ,"arch":"x64"  ,"ext":"zip"   ,"runner":"windows-latest"}'
           [ "${{ inputs.build_linux_x64 }}" = "true" ] && append '{"platform":"linux"  ,"arch":"x64"  ,"ext":"tar.gz","runner":"ubuntu-latest"}'
           [ "${{ inputs.build_linux_arm64 }}" = "true" ] && append '{"platform":"linux"  ,"arch":"arm64","ext":"tar.gz","runner":"ubuntu-24.04-arm"}'
-          # [ "${{ inputs.build_darwin_x64 }}" = "true" ] && append '{"platform":"darwin" ,"arch":"x64"  ,"ext":"tar.gz","runner":"macos-13"}'
+          [ "${{ inputs.build_darwin_x64 }}" = "true" ] && append '{"platform":"darwin" ,"arch":"x64"  ,"ext":"tar.gz","runner":"macos-15-intel"}'
           [ "${{ inputs.build_darwin_arm64 }}" = "true" ] && append '{"platform":"darwin" ,"arch":"arm64","ext":"tar.gz","runner":"macos-latest"}'
           echo "matrix=$entries" >> "$GITHUB_OUTPUT"
 
@@ -82,7 +82,7 @@ jobs:
         env:
           # Avoid onnxruntime device scan noise/hangs during PyInstaller analysis
           ORT_DISABLE_DEVICE_DISCOVERY: "1"
-        run: python -u scripts/build.py --skip-deps --skip-tesseract --skip-exiftool
+        run: python -u scripts/build.py --skip-deps
 
       - name: Debug encodings bundle
         shell: bash
