@@ -105,6 +105,7 @@ _mark("datas collection done")
 
 # Explicitly collect libpython shared library to avoid PYI-2973 (Linux/macOS)
 import sysconfig, glob as _glob, subprocess, ctypes.util
+_mark("stdlib imports done")
 
 def _collect_sysconfig_candidates(candidates):
     libdir = sysconfig.get_config_var("LIBDIR")
@@ -173,8 +174,11 @@ def _find_libpython():
     """Find the libpython shared library across platforms."""
     candidates = []
 
+    _mark("sysconfig search")
     _collect_sysconfig_candidates(candidates)
+    _mark("ldconfig search")
     _collect_ldconfig_candidates(candidates)
+    _mark("common search")
     _collect_common_search_candidates(candidates)
 
     # Direct ctypes.util.find_library result — this returns a full path on macOS,
@@ -225,18 +229,22 @@ _binaries = []
 # by setup-python on CI), PyInstaller's auto-detection may fail. Add it
 # manually via _find_libpython() which has more search fallbacks.
 if sys.platform == "linux":
+    _mark("calling find_libpython")
     _libpython = _find_libpython()
+    _mark(f"find_libpython returned: {_libpython}")
     if _libpython:
         _binaries.append((_libpython, "."))
 
 # On Linux, lxml needs libxml2 and libxslt bundled (they're dynamically linked)
 if sys.platform == "linux":
+    _mark("globbing libxml2/libxslt")
     _lib_dir = sysconfig.get_config_var("LIBDIR") or ""
     for _soname in ("libxml2.so.*", "libxslt.so.*"):
         for _p in _glob.glob(os.path.join(_lib_dir, _soname)):
             if os.path.isfile(_p):
                 _binaries.append((os.path.realpath(_p), "."))
                 break
+    _mark("libxml2/libxslt done")
 
 _mark("entering Analysis")
 a = Analysis(
