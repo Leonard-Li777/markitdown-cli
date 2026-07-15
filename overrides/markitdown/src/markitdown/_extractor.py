@@ -63,9 +63,7 @@ def extract_magika(file_bytes: bytes) -> dict:
             "extensions": result.output.extensions,
             "is_text": result.output.is_text,
         }
-    except Exception as e:
-        import sys
-        print(f"[Extractor Debug] extract_magika error: {e}", file=sys.stderr, flush=True)
+    except Exception:
         return {}
 
 
@@ -363,9 +361,8 @@ def run_extraction(
             r = m.identify_bytes(file_bytes)
             file_group = r.output.group
             file_is_text = r.output.is_text
-    except Exception as e:
-        import sys
-        print(f"[Extractor Debug] Magika error: {e}", file=sys.stderr, flush=True)
+    except Exception:
+        pass
 
     # If magika says "unknown", try encoding detection — it might be a
     # non-UTF-8 text file (GBK, Shift-JIS, etc.) that magika couldn't label.
