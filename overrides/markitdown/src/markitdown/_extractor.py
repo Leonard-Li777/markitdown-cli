@@ -211,7 +211,6 @@ def extract_ocr(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str]
     distinct from extract_document's non-OCR pipeline.
     """
     if "_pre_pdf" in kwargs:
-        from ._router import route_document
         extra = {"ocr_engine": "tesseract", "tesseract_lang": ocr_lang}
         extra.update({k: v for k, v in kwargs.items() if k in ("tesseract_path", "ocr_engine")})
         return route_document(
