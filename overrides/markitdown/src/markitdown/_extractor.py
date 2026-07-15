@@ -283,8 +283,57 @@ def extract_ocr(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str]
         except ImportError:
             # TesseractOCRService not available
             return ""
-    if ext in {".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".odt", ".odp", ".ods", ".pdf"}:
+    if ext in {".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".odt", ".odp", ".ods"}:
         return route_document(file_path, file_bytes, ext, enable_ocr=True, pages_spec_str=pages_spec_str, **kwargs)
+    if ext == ".pdf":
+        # For PDF files, render pages as images and OCR with Tesseract.
+        # Avoids the optional markitdown[pdf] dependency entirely.
+        try:
+            from markitdown_ocr._tesseract_service import TesseractOCRService
+            import fitz
+            svc = TesseractOCRService(
+                tesseract_path=kwargs.get("tesseract_path"),
+                lang=ocr_lang,
+            )
+            if not svc.available:
+                return ""
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            total = doc.page_count
+
+            # Resolve page range
+            if pages_spec_str:
+                from ._page_range import parse_pages, resolve
+                spec = parse_pages(pages_spec_str)
+                pages = resolve(spec, total) if spec else None
+            else:
+                pages = None
+            if pages is None:
+                pages = list(range(1, total + 1))
+            else:
+                pages = sorted(list(pages))
+
+            parts = []
+            for p in pages:
+                if 1 <= p <= total:
+                    page = doc[p - 1]
+                    # Render page to image at 300 DPI for OCR quality
+                    pix = page.get_pixmap(dpi=300)
+                    img_bytes = pix.tobytes("png")
+                    import io
+                    from PIL import Image as PILImage
+                    img = PILImage.open(io.BytesIO(img_bytes))
+                    buf = io.BytesIO()
+                    img.save(buf, format="PNG")
+                    buf.seek(0)
+                    result = svc.extract_text(buf)
+                    text = result.text or ""
+                    if text.strip():
+                        parts.append(text.strip())
+            doc.close()
+            return "\n\n".join(parts)
+        except ImportError:
+            # TesseractOCRService or fitz not available
+            return ""
     kwargs["ocr_engine"] = "tesseract"
     kwargs["tesseract_lang"] = ocr_lang
     return extract_text(file_path, file_bytes, pages_spec_str, enable_ocr=True, **kwargs)
