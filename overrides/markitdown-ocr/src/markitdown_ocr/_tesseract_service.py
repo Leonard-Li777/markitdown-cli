@@ -39,6 +39,23 @@ class TesseractOCRService:
                     if os.path.exists(c):
                         pytesseract.pytesseract.tesseract_cmd = c
                         break
+            else:
+                # Linux/macOS: check bundled tesseract binary
+                exe_dir = os.path.dirname(sys.executable)
+                # onedir: exe at dist/markitdown/markitdown → tesseract at dist/tesseract/
+                parent_dir = os.path.dirname(exe_dir) if os.path.basename(exe_dir) in ("_internal", "markitdown") else exe_dir
+                candidates = [
+                    os.path.join(exe_dir, "tesseract", "tesseract"),
+                    os.path.join(exe_dir, "tesseract"),
+                    os.path.join(parent_dir, "tesseract", "tesseract"),
+                    os.path.join(parent_dir, "tesseract"),
+                    "/usr/bin/tesseract",
+                    "/usr/local/bin/tesseract",
+                ]
+                for c in candidates:
+                    if os.path.exists(c):
+                        pytesseract.pytesseract.tesseract_cmd = c
+                        break
 
             self._pytesseract = pytesseract
 

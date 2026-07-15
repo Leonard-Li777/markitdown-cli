@@ -140,6 +140,10 @@ def extract_text(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str
 
     # Fallback: detect encoding and extract as plain text
     # Handles GBK (Chinese), Shift-JIS (Japanese), and other non-UTF-8 encodings
+    # But NOT for binary formats (DOCX, PPTX, etc.) — raw bytes are not valid text
+    binary_exts = {".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".odt", ".odp", ".ods", ".pdf"}
+    if ext in binary_exts:
+        return ""
     return _extract_text_raw(file_bytes)
 
 
