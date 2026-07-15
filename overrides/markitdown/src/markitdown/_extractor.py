@@ -248,6 +248,8 @@ def extract_ocr(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str]
         except ImportError:
             # TesseractOCRService not available
             return ""
+    if ext in {".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".odt", ".odp", ".ods", ".pdf"}:
+        return route_document(file_path, file_bytes, ext, enable_ocr=True, pages_spec_str=pages_spec_str, **kwargs)
     kwargs["ocr_engine"] = "tesseract"
     kwargs["tesseract_lang"] = ocr_lang
     return extract_text(file_path, file_bytes, pages_spec_str, enable_ocr=True, **kwargs)
