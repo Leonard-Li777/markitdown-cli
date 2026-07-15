@@ -172,9 +172,9 @@ def extract_document(file_path: str, file_bytes: bytes, pages_spec_str: Optional
                      enable_ocr: bool = False, **kwargs) -> str:
     """Extract markdown text from PDF/Office documents.
 
-    For PDFs (including ``_pre_pdf`` for Office files), only the text layer
-    is extracted  — a lightweight fitz get_text() — which is much cheaper
-    than the full markitdown pipeline and produces different output from OCR.
+    For PDFs, uses lightweight fitz get_text() — much cheaper than the
+    full markitdown pipeline and avoids the optional [pdf] dependency.
+    For Office files, routes through the normal markitdown pipeline.
     """
     if "_pre_pdf" in kwargs:
         # Reuse pre-converted PDF via markitdown pipeline (not fitz text layer).
@@ -189,6 +189,42 @@ def extract_document(file_path: str, file_bytes: bytes, pages_spec_str: Optional
             pages_spec_str=pages_spec_str,
         )
     ext = os.path.splitext(file_path)[1].lower()
+
+    # For PDF files, use lightweight fitz text extraction instead of the
+    # full markitdown pipeline. This avoids the optional [pdf] dependency
+    # and is significantly cheaper — just the text layer, no OCR/layout.
+    if ext == ".pdf":
+        try:
+            import fitz
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            total = doc.page_count
+
+            # Resolve page range
+            if pages_spec_str:
+                from ._page_range import parse_pages, resolve
+                spec = parse_pages(pages_spec_str)
+                pages = resolve(spec, total) if spec else None
+            else:
+                pages = None
+
+            if pages is None:
+                pages = list(range(1, total + 1))
+            else:
+                pages = sorted(list(pages))
+
+            parts = []
+            for p in pages:
+                if 1 <= p <= total:
+                    page = doc[p - 1]
+                    text = page.get_text()
+                    if text and text.strip():
+                        parts.append(text.strip())
+            doc.close()
+            return "\n\n".join(parts)
+        except Exception:
+            # Fall through to markitdown route below
+            pass
+
     from ._router import route_document
     return route_document(
         file_path=file_path,
@@ -397,9 +433,9 @@ def run_extraction(
         if "text" in extract_list and "document" in extract_list:
             skip_indicators.add("text")
     elif file_group == "text" or file_group == "code":
-        # Text files: run text (raw 1MB extraction), skip document if text is also requested
+        # Text/code files: run text, skip document (document is for PDF/Office only)
         # "code" group covers HTML, XML, CSS, JS, JSON, YAML, etc. — all text-based.
-        if "document" in extract_list and "text" in extract_list:
+        if "document" in extract_list:
             skip_indicators.add("document")
     else:
         # Other files (audio, video, image, binary): skip both text + document
