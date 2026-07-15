@@ -116,8 +116,8 @@ def extract_text(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str
     Note: when called through run_extraction for ``file_group=="text"``,
     a raw-text path (1MB+chardet) is used instead of this function.
     """
-    # Limit content to 1MB
-    MAX_TEXT_SIZE = 1_048_576
+    # Limit content to 10KB
+    MAX_TEXT_SIZE = 10 * 1024
     if len(file_bytes) > MAX_TEXT_SIZE:
         file_bytes = file_bytes[:MAX_TEXT_SIZE]
 
@@ -148,12 +148,12 @@ def extract_text(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str
 
 
 def _extract_text_raw(file_bytes: bytes) -> str:
-    """Raw plain-text extraction: 1MB limit + encoding detection via chardet.
+    """Raw plain-text extraction: 10KB limit + encoding detection via chardet.
 
     Used for ``file_group=="text"`` files — bypasses the MarkItDown pipeline
     and directly decodes the raw bytes with automatic encoding detection.
     """
-    MAX_TEXT_SIZE = 1_048_576
+    MAX_TEXT_SIZE = 10 * 1024
     if len(file_bytes) > MAX_TEXT_SIZE:
         file_bytes = file_bytes[:MAX_TEXT_SIZE]
     try:
@@ -396,8 +396,9 @@ def run_extraction(
         # Document files: run document, skip text if document is also requested
         if "text" in extract_list and "document" in extract_list:
             skip_indicators.add("text")
-    elif file_group == "text":
+    elif file_group == "text" or file_group == "code":
         # Text files: run text (raw 1MB extraction), skip document if text is also requested
+        # "code" group covers HTML, XML, CSS, JS, JSON, YAML, etc. — all text-based.
         if "document" in extract_list and "text" in extract_list:
             skip_indicators.add("document")
     else:
