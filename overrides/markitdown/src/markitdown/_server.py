@@ -91,9 +91,10 @@ class _Handler(BaseHTTPRequestHandler):
         except ImportError:
             pass
 
+        from .__about__ import __version__ as _ver
         self._send_json({
             "status": "ok",
-            "version": "0.1.6",
+            "version": _ver,
             "uptime_sec": int(getattr(self.server, "_uptime", 0)),
             "libreoffice": lo_info,
             "tesseract": tess_info,
@@ -350,9 +351,10 @@ def run_server(host: str = "127.0.0.1", port: int = 5052,
     # flush=True: in non-TTY environments stdout is block-buffered, so without
     # an explicit flush the PORT= line may never reach the consumer before
     # serve_forever() blocks indefinitely.
+    from .__about__ import __version__
     print(f"PORT={port}", flush=True)
     print(f"[{__import__('datetime').datetime.now():%Y-%m-%d %H:%M:%S}] "
-          f"Server started on http://{host}:{port}")
+          f"Server started on http://{host}:{port} (v{__version__})", flush=True)
 
     if port_file:
         os.makedirs(os.path.dirname(os.path.abspath(port_file)), exist_ok=True)

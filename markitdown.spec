@@ -96,10 +96,10 @@ except ImportError:
     pass
 _mark("encodings done")
 
-# Collect magika + onnxruntime as raw files via datas (NOT binaries).
+# Collect onnxruntime as raw files via datas (NOT binaries).
 # PyInstaller's binary/shared-library analysis of onnxruntime hangs on Linux.
-# By keeping them in excludes and manually copying via datas, we bypass the
-# static scan entirely while still making the packages available at runtime.
+# By keeping it in excludes and manually copying via datas, we bypass the
+# static scan entirely while still making the package available at runtime.
 _mark("collecting magika")
 datas.extend(_collect_package_as_datas("magika"))
 _mark("collecting onnxruntime")
@@ -336,6 +336,20 @@ a = Analysis(
         'PIL._imaging',
         'PIL.Image',
 
+        # Magika (file type detection)
+        'magika',
+        'magika.magika',
+        'magika.types',
+        'magika.types.content_type_info',
+        'magika.types.content_type_label',
+        'magika.types.magika_prediction',
+        'magika.types.magika_result',
+        'magika.types.model',
+        'magika.types.prediction_mode',
+        'magika.types.status',
+        'magika.types.strenum',
+        'magika.logger',
+
         # PDF
         'pdfminer',
         'pdfminer.high_level',
@@ -386,7 +400,7 @@ a = Analysis(
         'setuptools._distutils', 'youtube_transcript_api',
         'pytest', 'unittest', 'test', 'nose',
         'cv2', 'torch', 'tensorflow',
-        'magika', 'onnxruntime',
+        'onnxruntime',
         'PIL._imagingtk', 'PIL.ImageTk', 'PIL.ImageGrab',
         'pandas.io.clipboard', 'pandas.io.sql',
         'numpy.distutils', 'numpy.testing',

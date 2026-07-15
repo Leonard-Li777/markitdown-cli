@@ -26,7 +26,7 @@ on:
       create_release:
         description: 'Publish to GitHub Release'
         type: boolean
-        default: false
+        default: true
 
 jobs:
   select:

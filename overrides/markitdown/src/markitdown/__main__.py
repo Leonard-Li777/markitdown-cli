@@ -189,6 +189,9 @@ def _server_command():
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] in ("version", "--version", "-v"):
+        print(f"markitdown {__version__}")
+        return
     if len(sys.argv) > 1 and sys.argv[1] == "thumbnail":
         _thumbnail_command()
         return

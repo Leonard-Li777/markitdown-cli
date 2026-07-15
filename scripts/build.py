@@ -24,6 +24,7 @@ Platform support:
 """
 
 import argparse
+import datetime
 import os
 import platform
 import shutil
@@ -89,6 +90,22 @@ def info(msg):  print(f"[*] {msg}")
 def ok(msg):    print(f"[+] {msg}")
 def warn(msg):  print(f"[!] {msg}")
 def fail(msg):  print(f"[!] {msg}"); sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Generate date-based version number (YYYYMMDD.HHMMSS)
+# ---------------------------------------------------------------------------
+def generate_build_version() -> str:
+    """Generate a date-based version string for the build pipeline."""
+    return datetime.datetime.now().strftime("%Y%m%d.%H%M%S")
+
+
+def write_build_version(version: str):
+    """Write the generated version to __about__.py in the submodule."""
+    about_path = MARKITDOWN_PKG / "src" / "markitdown" / "__about__.py"
+    content = f'__version__ = "{version}"\n'
+    about_path.write_text(content, encoding="utf-8")
+    ok(f"Version set to {version}")
 
 
 # ---------------------------------------------------------------------------
@@ -666,6 +683,10 @@ def main():
             applied_overrides = True
         else:
             info("Skipping overrides (--skip-overrides)")
+
+        # Step 1.5: generate date-based build version
+        build_version = generate_build_version()
+        write_build_version(build_version)
 
         # Step 2: install deps + run PyInstaller
         if not args.skip_deps:
