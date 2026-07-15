@@ -354,9 +354,10 @@ def run_extraction(
     file_is_text = False
     try:
         m = _get_magika()
-        r = m.identify_bytes(file_bytes)
-        file_group = r.output.group
-        file_is_text = r.output.is_text
+        if m is not None:
+            r = m.identify_bytes(file_bytes)
+            file_group = r.output.group
+            file_is_text = r.output.is_text
     except Exception:
         pass
 
@@ -375,16 +376,21 @@ def run_extraction(
             pass
 
     # Build set of indicators to skip based on file type.
-    # text / document are mutually exclusive — only one runs.
+    # text / document are mutually exclusive — only one runs if both are requested.
     image_exts = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".tif", ".avif"}
+    office_exts = {".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".odt", ".odp", ".ods"}
+    
+    # Treat office formats as document group regardless of magika output, to prevent skipping document/ocr/thumbnail
+    is_office_or_pdf = (file_group == "document") or (ext == ".pdf") or (ext in office_exts)
+    
     skip_indicators: set[str] = set()
-    if file_group == "document":
-        # Document files: run document, skip text
-        if "text" in extract_list:
+    if is_office_or_pdf:
+        # Document files: run document, skip text if document is also requested
+        if "text" in extract_list and "document" in extract_list:
             skip_indicators.add("text")
     elif file_group == "text":
-        # Text files: run text (raw 1MB extraction), skip document
-        if "document" in extract_list:
+        # Text files: run text (raw 1MB extraction), skip document if text is also requested
+        if "document" in extract_list and "text" in extract_list:
             skip_indicators.add("document")
     else:
         # Other files (audio, video, image, binary): skip both text + document
@@ -392,25 +398,24 @@ def run_extraction(
             if skip in extract_list:
                 skip_indicators.add(skip)
     # Keep ocr only for document files and images; skip for text and other types
-    if file_group != "document" and ext not in image_exts and "ocr" in extract_list:
+    if not is_office_or_pdf and ext not in image_exts and "ocr" in extract_list:
         skip_indicators.add("ocr")
     # Thumbnail only makes sense for document-type files
-    if file_group != "document" and "thumbnail" in extract_list:
+    if not is_office_or_pdf and "thumbnail" in extract_list:
         skip_indicators.add("thumbnail")
 
     # Filter extract_list for logging
     filtered_extract = [i for i in extract_list if i not in skip_indicators]
     results["extract"] = filtered_extract  # report what was actually processed
 
-    # Optimisation: when OCR is requested on an Office file, pre-convert to
-    # PDF once and reuse for OCR, document (text extraction via PDF), and
-    # thumbnail (first-page render).  Without OCR, native extraction is used
-    # for all indicators — no LibreOffice needed, full content is returned
+    # Optimisation: when OCR, thumbnail, or document with page range selection is requested on an Office file,
+    # pre-convert to PDF once and reuse for OCR, document (text extraction via PDF), and thumbnail (first-page render).
+    # Without these, native extraction is used for all indicators — no LibreOffice needed, full content is returned
     # regardless of --pages (native converters don't support page selection).
     ext = os.path.splitext(file_path)[1].lower()
     office_exts = {".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".odt", ".odp", ".ods"}
     pre_pdf: bytes | None = None
-    needs_lo = "ocr" in extract_list
+    needs_lo = "ocr" in extract_list or "thumbnail" in extract_list or (pages_spec_str and "document" in extract_list)
     if ext in office_exts and needs_lo:
         try:
             from ._pdf_output import office_to_pdf
