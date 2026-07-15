@@ -57,12 +57,15 @@ def _collect_package_as_datas(package_name):
                             os.path.dirname(pkg_dir),
                         )
                         collected.append((src, rel))
-    except Exception:
+    except Exception as e:
         print(
-            f"[WARN] Could not locate package '{package_name}' for manual "
-            f"collection — runtime import will fall back gracefully",
+            f"[ERROR] Could not locate package '{package_name}' for manual "
+            f"collection: {e}",
             file=sys.stderr,
         )
+        raise RuntimeError(f"Missing required build dependency: {package_name}")
+    if not collected:
+        raise RuntimeError(f"Missing or empty required build dependency: {package_name}")
     return collected
 
 _mark("start")

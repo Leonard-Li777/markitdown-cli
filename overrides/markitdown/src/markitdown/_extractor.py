@@ -49,19 +49,24 @@ def _get_magika():
 
 def extract_magika(file_bytes: bytes) -> dict:
     """Identify file type using magika. Returns empty dict if magika is unavailable."""
-    m = _get_magika()
-    if m is None:
+    try:
+        m = _get_magika()
+        if m is None:
+            return {}
+        result = m.identify_bytes(file_bytes)
+        return {
+            "label": result.output.label,
+            "mime_type": result.output.mime_type,
+            "description": result.output.description,
+            "group": result.output.group,
+            "score": result.score,
+            "extensions": result.output.extensions,
+            "is_text": result.output.is_text,
+        }
+    except Exception as e:
+        import sys
+        print(f"[Extractor Debug] extract_magika error: {e}", file=sys.stderr, flush=True)
         return {}
-    result = m.identify_bytes(file_bytes)
-    return {
-        "label": result.output.label,
-        "mime_type": result.output.mime_type,
-        "description": result.output.description,
-        "group": result.output.group,
-        "score": result.score,
-        "extensions": result.output.extensions,
-        "is_text": result.output.is_text,
-    }
 
 
 def extract_metadata(file_path: str, file_bytes: bytes, **kwargs) -> dict:
@@ -358,8 +363,9 @@ def run_extraction(
             r = m.identify_bytes(file_bytes)
             file_group = r.output.group
             file_is_text = r.output.is_text
-    except Exception:
-        pass
+    except Exception as e:
+        import sys
+        print(f"[Extractor Debug] Magika error: {e}", file=sys.stderr, flush=True)
 
     # If magika says "unknown", try encoding detection — it might be a
     # non-UTF-8 text file (GBK, Shift-JIS, etc.) that magika couldn't label.
