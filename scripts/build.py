@@ -376,18 +376,14 @@ def setup_tesseract_macos(tesseract_dir: Path):
 # Step 3 — PyInstaller build
 # ---------------------------------------------------------------------------
 def _pyinstaller_boot_exe() -> Path:
-    # onefile: PyInstaller outputs dist/markitdown/markitdown(.exe) directly
-    onefile = DIST_DIR / "markitdown" / ("markitdown.exe" if SYSTEM == "Windows" else "markitdown")
-    if onefile.is_file():
-        return onefile
-    # onedir fallback: dist/markitdown/_markitdown_boot(.exe)
+    # onefile: PyInstaller outputs dist/markitdown/_markitdown_boot(.exe)
     name = "_markitdown_boot.exe" if SYSTEM == "Windows" else "_markitdown_boot"
     return DIST_DIR / "markitdown" / name
 
 
 def _bundled_internal_dir() -> Path | None:
     """Return PyInstaller _internal/ dir (pre-flatten or post-flatten)."""
-    for candidate in (DIST_DIR / "markitdown" / "_internal", DIST_DIR / "_internal"):
+    for candidate in (DIST_DIR / "_internal", DIST_DIR / "markitdown" / "_internal"):
         if candidate.is_dir():
             return candidate
     return None
@@ -761,6 +757,8 @@ def main():
                 ok(f"{helper} copied")
 
         # Step 6: flatten — move everything from dist/markitdown/ up to dist/
+        # For onefile, the exe is already at dist/markitdown.exe (PyInstaller output);
+        # only tesseract/, exiftool/, helper scripts live in dist/markitdown/.
         app_dir = DIST_DIR / "markitdown"
         if app_dir.is_dir():
             for item in app_dir.iterdir():
@@ -769,13 +767,14 @@ def main():
                     if target.is_dir():
                         shutil.rmtree(target, ignore_errors=True)
                     else:
-                        target.unlink()
+                        # On onefile, exe is already at dist/markitdown(.exe);
+                        # don't overwrite it with a move from itself.
+                        continue
                 shutil.move(str(item), str(DIST_DIR))
             shutil.rmtree(str(app_dir), ignore_errors=True)
 
             # Rename _markitdown_boot → markitdown (or .exe on Windows).
-            # Do NOT set PYTHONPATH to base_library.zip — that makes Python treat
-            # the zip as a filesystem directory (NotADirectoryError / missing encodings).
+            # Only applies to onedir builds; onefile already outputs markitdown.
             boot = DIST_DIR / ("_markitdown_boot.exe" if SYSTEM == "Windows" else "_markitdown_boot")
             final = DIST_DIR / ("markitdown.exe" if SYSTEM == "Windows" else "markitdown")
             if boot.exists():

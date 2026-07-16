@@ -417,7 +417,7 @@ exe = EXE(
     a.binaries,
     a.zipfiles,
     a.datas,
-    name='markitdown',
+    name='_markitdown_boot',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
