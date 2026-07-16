@@ -45,15 +45,20 @@ class TesseractOCRService:
                 # onedir: exe at dist/markitdown/markitdown → tesseract at dist/tesseract/
                 parent_dir = os.path.dirname(exe_dir) if os.path.basename(exe_dir) in ("_internal", "markitdown") else exe_dir
                 candidates = [
+                    # macOS dylibbundler layout: tesseract/bin/tesseract
+                    os.path.join(exe_dir, "tesseract", "bin", "tesseract"),
                     os.path.join(exe_dir, "tesseract", "tesseract"),
                     os.path.join(exe_dir, "tesseract"),
+                    os.path.join(parent_dir, "tesseract", "bin", "tesseract"),
                     os.path.join(parent_dir, "tesseract", "tesseract"),
                     os.path.join(parent_dir, "tesseract"),
-                    "/usr/bin/tesseract",
+                    # Homebrew (Apple Silicon / Intel)
+                    "/opt/homebrew/bin/tesseract",
                     "/usr/local/bin/tesseract",
+                    "/usr/bin/tesseract",
                 ]
                 for c in candidates:
-                    if os.path.exists(c):
+                    if os.path.isfile(c):
                         pytesseract.pytesseract.tesseract_cmd = c
                         break
 
@@ -63,13 +68,36 @@ class TesseractOCRService:
             self._available = os.path.isfile(self._tesseract_cmd)
 
             if self._available:
+                import platform as _plat
+
+                # Set DYLD_LIBRARY_PATH / LD_LIBRARY_PATH for bundled dylibs
+                # macOS build layout: tesseract/bin/tesseract + tesseract/lib/*.dylib
+                tess_bin_dir = os.path.dirname(self._tesseract_cmd)
+                ld_key = "DYLD_LIBRARY_PATH" if _plat.system() == "Darwin" else "LD_LIBRARY_PATH"
+                # Check lib/ next to the binary AND lib/ one level up (for bin/ layout)
+                for lib_candidate in [
+                    os.path.join(tess_bin_dir, "lib"),
+                    os.path.join(os.path.dirname(tess_bin_dir), "lib"),
+                ]:
+                    if os.path.isdir(lib_candidate):
+                        existing = os.environ.get(ld_key, "")
+                        if lib_candidate not in existing:
+                            os.environ[ld_key] = lib_candidate + os.pathsep + existing
+                        break
+
+                # Set TESSDATA_PREFIX — check multiple locations
                 tessdata_env = os.environ.get("TESSDATA_PREFIX")
                 if not tessdata_env:
-                    tessdata_dir = os.path.join(
-                        os.path.dirname(self._tesseract_cmd), "tessdata"
-                    )
-                    if os.path.isdir(tessdata_dir):
-                        os.environ["TESSDATA_PREFIX"] = tessdata_dir
+                    tessdata_candidates = [
+                        os.path.join(tess_bin_dir, "tessdata"),
+                        os.path.join(os.path.dirname(tess_bin_dir), "tessdata"),
+                        os.path.join(tess_bin_dir, "share", "tessdata"),
+                        os.path.join(os.path.dirname(tess_bin_dir), "share", "tessdata"),
+                    ]
+                    for td in tessdata_candidates:
+                        if os.path.isdir(td):
+                            os.environ["TESSDATA_PREFIX"] = td
+                            break
         except ImportError:
             self._available = False
 

@@ -32,14 +32,21 @@ for c in _candidates:
 if tesseract_exe:
     import pytesseract
     pytesseract.pytesseract.tesseract_cmd = tesseract_exe
-    # On Linux, also set LD_LIBRARY_PATH for bundled libs
+    # On Linux/macOS, set LD_LIBRARY_PATH / DYLD_LIBRARY_PATH for bundled libs
+    # macOS dylibbundler layout: tesseract/bin/tesseract + tesseract/lib/*.dylib
     if not _is_win:
-        lib_dir = os.path.join(os.path.dirname(tesseract_exe), "lib")
+        _tess_bin_dir = os.path.dirname(tesseract_exe)
         ld_key = "LD_LIBRARY_PATH" if platform.system() == "Linux" else "DYLD_LIBRARY_PATH"
-        if os.path.isdir(lib_dir):
-            existing = os.environ.get(ld_key, "")
-            if lib_dir not in existing:
-                os.environ[ld_key] = lib_dir + os.pathsep + existing
+        # Check lib/ next to the binary AND lib/ one level up (for bin/ layout)
+        for _lib_candidate in [
+            os.path.join(_tess_bin_dir, "lib"),
+            os.path.join(os.path.dirname(_tess_bin_dir), "lib"),
+        ]:
+            if os.path.isdir(_lib_candidate):
+                existing = os.environ.get(ld_key, "")
+                if _lib_candidate not in existing:
+                    os.environ[ld_key] = _lib_candidate + os.pathsep + existing
+                break
     # tessdata
     for td in [
         os.path.join(os.path.dirname(tesseract_exe), "tessdata"),
