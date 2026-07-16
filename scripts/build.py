@@ -376,6 +376,11 @@ def setup_tesseract_macos(tesseract_dir: Path):
 # Step 3 — PyInstaller build
 # ---------------------------------------------------------------------------
 def _pyinstaller_boot_exe() -> Path:
+    # onefile: PyInstaller outputs dist/markitdown/markitdown(.exe) directly
+    onefile = DIST_DIR / "markitdown" / ("markitdown.exe" if SYSTEM == "Windows" else "markitdown")
+    if onefile.is_file():
+        return onefile
+    # onedir fallback: dist/markitdown/_markitdown_boot(.exe)
     name = "_markitdown_boot.exe" if SYSTEM == "Windows" else "_markitdown_boot"
     return DIST_DIR / "markitdown" / name
 
@@ -505,14 +510,17 @@ def _kill_process_group(proc: subprocess.Popen) -> None:
 def _verify_pyinstaller_output() -> None:
     boot = _pyinstaller_boot_exe()
     internal = _bundled_internal_dir()
-    if boot.is_file() and internal is not None:
-        ok(f"Executable: {boot} ({boot.stat().st_size // (1024 * 1024)} MB)")
+    if boot.is_file():
+        if internal is not None:
+            ok(f"Executable: {boot} ({boot.stat().st_size // (1024 * 1024)} MB)")
+        else:
+            ok(f"Single-file executable: {boot} ({boot.stat().st_size // (1024 * 1024)} MB)")
         return
     if internal is not None:
         warn(f"Boot binary missing at {boot}, but _internal/ exists")
     else:
         warn("PyInstaller output not found in dist/markitdown/")
-    fail("PyInstaller did not produce expected onedir bundle")
+    fail("PyInstaller did not produce expected bundle")
 
 
 def build_markitdown(onefile: bool):
@@ -650,7 +658,7 @@ def main():
     )
     parser.add_argument(
         "--onefile", action="store_true",
-        help="Build single-file executable (default; spec is already onefile)",
+        help="Build single-file executable (default)",
     )
     parser.add_argument(
         "--skip-tesseract", action="store_true",

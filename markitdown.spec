@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 #
-# PyInstaller spec for MarkItDown onedir CLI.
-# Produces dist/markitdown/ directory (self-contained, no runtime deps).
+# PyInstaller spec for MarkItDown onefile CLI.
+# Produces a single dist/markitdown.exe (self-contained, no runtime deps).
 # Tesseract is NOT embedded; place alongside the executable.
 #
 # Build:
@@ -411,17 +411,13 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data)
 
-# EXE must have a name that doesn't collide with COLLECT on macOS/Linux
-# (on Windows, .exe suffix avoids the collision automatically)
 exe = EXE(
     pyz,
     a.scripts,
-    [],
-    # This is a COLLECT/onedir build; keep binaries outside the executable.
-    # Otherwise the bootloader behaves more like onefile and looks in _MEI...
-    # for the Python shared library, which breaks our flattened onedir layout.
-    exclude_binaries=True,
-    name='_markitdown_boot',
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    name='markitdown',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -435,12 +431,4 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=None,
-)
-
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    name='markitdown',
 )
