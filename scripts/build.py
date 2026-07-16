@@ -96,7 +96,9 @@ def fail(msg):  print(f"[!] {msg}"); sys.exit(1)
 # Generate date-based version number (YYYYMMDD.HHMMSS)
 # ---------------------------------------------------------------------------
 def generate_build_version() -> str:
-    """Generate a date-based version string for the build pipeline."""
+    """Generate a consistent version string for the build pipeline."""
+    if "MARKITDOWN_BUILD_VERSION" in os.environ:
+        return os.environ["MARKITDOWN_BUILD_VERSION"]
     return datetime.datetime.now().strftime("%Y%m%d.%H%M%S")
 
 
