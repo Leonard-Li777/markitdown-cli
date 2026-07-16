@@ -21,7 +21,7 @@ _candidates = [
 
 tesseract_exe = None
 for c in _candidates:
-    if os.path.exists(c):
+    if os.path.isfile(c):  # isfile prevents dist/tesseract/ directory from matching on Linux
         tesseract_exe = c
         tess_bin_dir = os.path.dirname(c)
         path_parts = os.environ.get("PATH", "").split(os.pathsep)

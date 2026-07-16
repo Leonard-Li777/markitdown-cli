@@ -270,6 +270,8 @@ def extract_ocr(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str]
                 lang=ocr_lang,
             )
             if not svc.available:
+                import warnings
+                warnings.warn(f"[OCR] Tesseract not available (cmd={getattr(svc, '_tesseract_cmd', '?')})", RuntimeWarning)
                 return ""
             img = PILImage.open(io.BytesIO(file_bytes))
             # Convert to RGB if needed (RGBA → RGB for jpg/webp output compatibility)
@@ -279,6 +281,9 @@ def extract_ocr(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str]
             img.save(buf, format="PNG")
             buf.seek(0)
             result = svc.extract_text(buf)
+            if result.error:
+                import warnings
+                warnings.warn(f"[OCR] Tesseract error: {result.error}", RuntimeWarning)
             return result.text or ""
         except ImportError:
             # TesseractOCRService not available
@@ -296,6 +301,8 @@ def extract_ocr(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str]
                 lang=ocr_lang,
             )
             if not svc.available:
+                import warnings
+                warnings.warn(f"[OCR] Tesseract not available (cmd={getattr(svc, '_tesseract_cmd', '?')})", RuntimeWarning)
                 return ""
             doc = fitz.open(stream=file_bytes, filetype="pdf")
             total = doc.page_count
@@ -326,6 +333,9 @@ def extract_ocr(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str]
                     img.save(buf, format="PNG")
                     buf.seek(0)
                     result = svc.extract_text(buf)
+                    if result.error:
+                        import warnings
+                        warnings.warn(f"[OCR] Tesseract error on page {p}: {result.error}", RuntimeWarning)
                     text = result.text or ""
                     if text.strip():
                         parts.append(text.strip())
