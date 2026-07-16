@@ -23,40 +23,36 @@ class TesseractOCRService:
                 pytesseract.pytesseract.tesseract_cmd = tesseract_path
             elif os.environ.get("TESSERACT_PATH"):
                 pytesseract.pytesseract.tesseract_cmd = os.environ["TESSERACT_PATH"]
-            elif sys.platform == "win32":
-                exe_dir = os.path.dirname(sys.executable)
-                # onedir: exe at dist/markitdown/markitdown.exe → tesseract at dist/tesseract/
-                parent_dir = os.path.dirname(exe_dir) if os.path.basename(exe_dir) in ("_internal", "markitdown") else exe_dir
-                candidates = [
-                    os.path.join(exe_dir, "tesseract", "tesseract.exe"),
-                    os.path.join(exe_dir, "tesseract.exe"),
-                    os.path.join(parent_dir, "tesseract", "tesseract.exe"),
-                    os.path.join(parent_dir, "tesseract.exe"),
-                    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-                    r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-                ]
-                for c in candidates:
-                    if os.path.exists(c):
-                        pytesseract.pytesseract.tesseract_cmd = c
-                        break
             else:
-                # Linux/macOS: check bundled tesseract binary
+                # Platform-specific auto-detection of bundled tesseract
                 exe_dir = os.path.dirname(sys.executable)
-                # onedir: exe at dist/markitdown/markitdown → tesseract at dist/tesseract/
                 parent_dir = os.path.dirname(exe_dir) if os.path.basename(exe_dir) in ("_internal", "markitdown") else exe_dir
-                candidates = [
-                    # macOS dylibbundler layout: tesseract/bin/tesseract
-                    os.path.join(exe_dir, "tesseract", "bin", "tesseract"),
-                    os.path.join(exe_dir, "tesseract", "tesseract"),
-                    os.path.join(exe_dir, "tesseract"),
-                    os.path.join(parent_dir, "tesseract", "bin", "tesseract"),
-                    os.path.join(parent_dir, "tesseract", "tesseract"),
-                    os.path.join(parent_dir, "tesseract"),
-                    # Homebrew (Apple Silicon / Intel)
-                    "/opt/homebrew/bin/tesseract",
-                    "/usr/local/bin/tesseract",
-                    "/usr/bin/tesseract",
-                ]
+                if sys.platform == "win32":
+                    # onedir: exe at dist/markitdown/markitdown.exe → tesseract at dist/tesseract/
+                    candidates = [
+                        os.path.join(exe_dir, "tesseract", "tesseract.exe"),
+                        os.path.join(exe_dir, "tesseract.exe"),
+                        os.path.join(parent_dir, "tesseract", "tesseract.exe"),
+                        os.path.join(parent_dir, "tesseract.exe"),
+                        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+                        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+                    ]
+                else:
+                    # Linux/macOS: check bundled tesseract binary
+                    # onedir: exe at dist/markitdown/markitdown → tesseract at dist/tesseract/
+                    candidates = [
+                        # macOS dylibbundler layout: tesseract/bin/tesseract
+                        os.path.join(exe_dir, "tesseract", "bin", "tesseract"),
+                        os.path.join(exe_dir, "tesseract", "tesseract"),
+                        os.path.join(exe_dir, "tesseract"),
+                        os.path.join(parent_dir, "tesseract", "bin", "tesseract"),
+                        os.path.join(parent_dir, "tesseract", "tesseract"),
+                        os.path.join(parent_dir, "tesseract"),
+                        # Homebrew (Apple Silicon / Intel)
+                        "/opt/homebrew/bin/tesseract",
+                        "/usr/local/bin/tesseract",
+                        "/usr/bin/tesseract",
+                    ]
                 for c in candidates:
                     if os.path.isfile(c):
                         pytesseract.pytesseract.tesseract_cmd = c
