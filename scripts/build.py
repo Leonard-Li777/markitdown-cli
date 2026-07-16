@@ -376,8 +376,12 @@ def setup_tesseract_macos(tesseract_dir: Path):
 # Step 3 — PyInstaller build
 # ---------------------------------------------------------------------------
 def _pyinstaller_boot_exe() -> Path:
-    # onefile: PyInstaller outputs dist/markitdown/_markitdown_boot(.exe)
     name = "_markitdown_boot.exe" if SYSTEM == "Windows" else "_markitdown_boot"
+    # onefile: PyInstaller outputs dist/<name>.exe directly (no COLLECT subdirectory)
+    onefile = DIST_DIR / name
+    if onefile.is_file():
+        return onefile
+    # onedir: dist/markitdown/<name>.exe (inside COLLECT directory)
     return DIST_DIR / "markitdown" / name
 
 
@@ -512,6 +516,31 @@ def _verify_pyinstaller_output() -> None:
         else:
             ok(f"Single-file executable: {boot} ({boot.stat().st_size // (1024 * 1024)} MB)")
         return
+
+    # Dump diagnostic info when output is missing
+    warn_path = REPO_ROOT / "build" / "markitdown" / "warn-markitdown.txt"
+    if warn_path.is_file():
+        warn(f"PyInstaller warnings ({warn_path}):")
+        try:
+            print(warn_path.read_text(encoding="utf-8", errors="replace")[-4000:], file=sys.stderr)
+        except Exception:
+            pass
+    log_path = REPO_ROOT / "build" / "pyinstaller.log"
+    if log_path.is_file():
+        warn(f"PyInstaller log tail ({log_path}):")
+        try:
+            print(log_path.read_text(encoding="utf-8", errors="replace")[-4000:], file=sys.stderr)
+        except Exception:
+            pass
+    # Show what's actually in dist/
+    if DIST_DIR.is_dir():
+        warn(f"dist/ contents:")
+        for item in sorted(DIST_DIR.iterdir()):
+            if item.is_file():
+                print(f"  {item.name}  ({item.stat().st_size // (1024*1024)} MB)", file=sys.stderr)
+            else:
+                print(f"  {item.name}/", file=sys.stderr)
+
     if internal is not None:
         warn(f"Boot binary missing at {boot}, but _internal/ exists")
     else:
