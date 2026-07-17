@@ -695,6 +695,10 @@ def main():
         description="Build MarkItDown CLI with bundled Tesseract OCR"
     )
     parser.add_argument(
+        "--onefile", action="store_true", default=True,
+        help="Build single-file executable (default)",
+    )
+    parser.add_argument(
         "--onedir", action="store_true",
         help="Build directory bundle instead of single-file executable",
     )
@@ -715,7 +719,7 @@ def main():
         help="Skip downloading/bundling ExifTool",
     )
     args = parser.parse_args()
-    onefile = not args.onedir
+    onefile = args.onefile and not args.onedir
 
     print("=" * 60)
     print(f"  MarkItDown CLI Builder")
@@ -737,19 +741,7 @@ def main():
         build_version = generate_build_version()
         write_build_version(build_version)
 
-        # Extract local offline package if present to skip downloading
-        local_archive = Path(r"F:\lilun\Download\Compressed\markitdown-bin-win32-x64.zip")
-        if local_archive.exists() and SYSTEM == "Windows":
-            info(f"Found local offline package: {local_archive}")
-            try:
-                extract_target = DIST_DIR if onefile else DIST_DIR / "markitdown"
-                extract_target.mkdir(parents=True, exist_ok=True)
-                with zipfile.ZipFile(local_archive, 'r') as zip_ref:
-                    info(f"Extracting local offline package to {extract_target}...")
-                    zip_ref.extractall(extract_target)
-                ok("Local offline package extracted successfully")
-            except Exception as e:
-                warn(f"Failed to extract local offline package: {e}")
+
 
         # Step 2: download Tesseract & ExifTool BEFORE PyInstaller runs.
         # The spec file scans these directories during Analysis and adds them to datas.
