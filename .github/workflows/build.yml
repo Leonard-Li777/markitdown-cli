@@ -87,31 +87,13 @@ jobs:
           # Avoid onnxruntime device scan noise/hangs during PyInstaller analysis
           ORT_DISABLE_DEVICE_DISCOVERY: "1"
           MARKITDOWN_BUILD_VERSION: 1.0.${{ github.run_number }}
-        run: python -u scripts/build.py --skip-deps
+        run: python -u scripts/build.py --skip-deps --onefile
 
       - name: Debug encodings bundle
         shell: bash
         run: |
-          echo "=== encodings layout ==="
-          find dist -type d -name 'encodings' 2>/dev/null | head -5 || true
-          # Detect onefile vs onedir: onefile has no _internal/ directory
-          if [ -d "dist/_internal" ] || [ -d "dist/markitdown/_internal" ]; then
-            MODE="onedir"
-          else
-            MODE="onefile"
-          fi
-          echo "Build mode: $MODE"
-          ZIP=""
-          for candidate in dist/_internal/base_library.zip dist/markitdown/_internal/base_library.zip; do
-            if [ -f "$candidate" ]; then ZIP="$candidate"; break; fi
-          done
-          if [ -n "$ZIP" ]; then
-            python3 -c "import zipfile; z=zipfile.ZipFile('$ZIP'); n=sorted(z.namelist()); h=any(x.startswith('encodings/') for x in n); print('zip:', '$ZIP'); print('encodings in zip:', h)"
-          elif [ "$MODE" = "onefile" ]; then
-            echo "onefile mode: encodings bundled inside exe (not verifiable from dist/)"
-          else
-            echo "no base_library.zip (noarchive mode — loose files expected)"
-          fi
+          echo "=== dist/ contents ==="
+          find dist -maxdepth 2 -type f 2>/dev/null | head -10 || true
           if [ -f build/pyinstaller.log ]; then
             echo "=== PyInstaller log tail ==="
             tail -30 build/pyinstaller.log
@@ -122,75 +104,29 @@ jobs:
         run: |
           echo "=== Check binary exists ==="
           if [ "${{ matrix.platform }}" = "win32" ]; then
-            EXE="dist/markitdown.exe"
+            EXE="dist/markitdown/markitdown.exe"
           else
-            EXE="dist/markitdown"
+            EXE="dist/markitdown/markitdown"
           fi
           test -f "$EXE" || { echo "FAIL: $EXE not found"; exit 1; }
 
-          # Detect onefile vs onedir
-          if [ -d "dist/_internal" ] || [ -d "dist/markitdown/_internal" ]; then
-            MODE="onedir"
-          else
-            MODE="onefile"
-          fi
-          echo "Build mode: $MODE"
-
-          if [ "$MODE" = "onedir" ]; then
-            echo "=== Check libpython is bundled ==="
-            if [ "${{ matrix.platform }}" = "linux" ]; then
-              if ! find dist/ -name 'libpython3*.so*' | grep -q .; then
-                echo "FAIL: libpython .so not found in dist/"
-                exit 1
-              fi
-            elif [ "${{ matrix.platform }}" = "darwin" ]; then
-              if ! find dist/ -name 'libpython3*.dylib' -o -name 'Python3' -o -name 'Python' | grep -q .; then
-                echo "FAIL: libpython (.dylib / Python3 / Python) not found in dist/"
-                exit 1
-              fi
-            fi
-
-            echo "=== Check certifi CA bundle is bundled ==="
-            if ! find dist/ -name 'cacert.pem' | grep -q .; then
-              echo "WARN: cacert.pem not found — HTTPS may fail"
-            fi
-
-            echo "=== Check encodings available ==="
-            ENC_OK=0
-            if find dist/ -path '*/encodings/__init__.py' | grep -q .; then
-              echo "encodings loose files: OK"
-              ENC_OK=1
-            fi
-            ZIP=""
-            for candidate in dist/_internal/base_library.zip dist/markitdown/_internal/base_library.zip; do
-              if [ -f "$candidate" ]; then ZIP="$candidate"; break; fi
-            done
-            if [ -n "$ZIP" ]; then
-              python3 -c "import zipfile,sys; z=zipfile.ZipFile('$ZIP'); ok=any(n.startswith('encodings/') for n in z.namelist()); print('encodings in zip:', ok); sys.exit(0 if ok else 1)" && ENC_OK=1
-            fi
-            if [ "$ENC_OK" -eq 0 ]; then
-              echo "FAIL: encodings not found (neither loose dir nor base_library.zip)"
-              exit 1
-            fi
-          else
-            echo "=== onefile mode: libpython/encodings/cacert bundled inside exe ==="
-            SIZE=$(stat -c%s "$EXE" 2>/dev/null || stat -f%z "$EXE" 2>/dev/null)
-            echo "Executable size: $(( SIZE / 1024 / 1024 )) MB"
-          fi
+          echo "=== onefile mode: all deps bundled inside exe ==="
+          SIZE=$(stat -c%s "$EXE" 2>/dev/null || stat -f%z "$EXE" 2>/dev/null)
+          echo "Executable size: $(( SIZE / 1024 / 1024 )) MB"
 
           echo "=== Run --help ==="
           "$EXE" --help
 
       - name: Create tar.gz archive
         if: matrix.ext == 'tar.gz'
-        run: tar -czf "markitdown-bin-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz" -C dist .
+        run: tar -czf "markitdown-bin-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz" -C dist/markitdown .
 
       - name: Create zip archive
         if: matrix.ext == 'zip'
         shell: pwsh
         run: |
           $name = "markitdown-bin-${{ matrix.platform }}-${{ matrix.arch }}"
-          Compress-Archive -Path "dist/*" -DestinationPath "$name.zip" -CompressionLevel Optimal
+          Compress-Archive -Path "dist/markitdown/*" -DestinationPath "$name.zip" -CompressionLevel Optimal
 
       - uses: actions/upload-artifact@v5
         with:

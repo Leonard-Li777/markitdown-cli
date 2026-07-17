@@ -742,6 +742,7 @@ def main():
         ensure_encodings_in_zip()
 
         # Step 3: bundle Tesseract into dist/markitdown/ (alongside _internal/)
+        # MUST run before PyInstaller so the spec can bundle them via datas.
         if not args.skip_tesseract:
             # Ensure dist/markitdown is a directory (not a stale file from a failed build)
             markitdown_dir = DIST_DIR / "markitdown"
@@ -764,6 +765,7 @@ def main():
             download_tessdata(tesseract_dir / "tessdata")
 
         # Step 4: bundle ExifTool into dist/markitdown/
+        # MUST run before PyInstaller so the spec can bundle them via datas.
         if not args.skip_exiftool:
             exiftool_dir = DIST_DIR / "markitdown" / "exiftool"
             exiftool_dir.mkdir(parents=True, exist_ok=True)
@@ -788,40 +790,58 @@ def main():
         # Step 6: flatten — move everything from dist/markitdown/ up to dist/
         # For onefile, the exe is already at dist/markitdown.exe (PyInstaller output);
         # only tesseract/, exiftool/, helper scripts live in dist/markitdown/.
-        app_dir = DIST_DIR / "markitdown"
-        if app_dir.is_dir():
-            for item in app_dir.iterdir():
-                target = DIST_DIR / item.name
-                if target.exists():
-                    if target.is_dir():
-                        shutil.rmtree(target, ignore_errors=True)
-                    else:
-                        # On onefile, exe is already at dist/markitdown(.exe);
-                        # don't overwrite it with a move from itself.
-                        continue
-                shutil.move(str(item), str(DIST_DIR))
-            shutil.rmtree(str(app_dir), ignore_errors=True)
+        if not args.onefile:
+            app_dir = DIST_DIR / "markitdown"
+            if app_dir.is_dir():
+                for item in app_dir.iterdir():
+                    target = DIST_DIR / item.name
+                    if target.exists():
+                        if target.is_dir():
+                            shutil.rmtree(target, ignore_errors=True)
+                        else:
+                            # On onefile, exe is already at dist/markitdown(.exe);
+                            # don't overwrite it with a move from itself.
+                            continue
+                    shutil.move(str(item), str(DIST_DIR))
+                shutil.rmtree(str(app_dir), ignore_errors=True)
 
-            # Rename _markitdown_boot → markitdown (or .exe on Windows).
-            # Only applies to onedir builds; onefile already outputs markitdown.
-            boot = DIST_DIR / ("_markitdown_boot.exe" if SYSTEM == "Windows" else "_markitdown_boot")
-            final = DIST_DIR / ("markitdown.exe" if SYSTEM == "Windows" else "markitdown")
-            if boot.exists():
-                if SYSTEM == "Darwin" and shutil.which("install_name_tool"):
-                    subprocess.run(
-                        ["install_name_tool", "-add_rpath", "@executable_path/_internal", str(boot)],
-                        check=False,
-                        capture_output=True,
-                    )
-                elif SYSTEM == "Linux" and shutil.which("patchelf"):
-                    subprocess.run(
-                        ["patchelf", "--set-rpath", "$ORIGIN/_internal", str(boot)],
-                        check=False,
-                        capture_output=True,
-                    )
-                shutil.move(str(boot), str(final))
-                ok("Renamed _markitdown_boot -> markitdown")
-            ok("Flattened dist/markitdown/ -> dist/")
+                # Rename _markitdown_boot → markitdown (or .exe on Windows).
+                # Only applies to onedir builds; onefile already outputs markitdown.
+                boot = DIST_DIR / ("_markitdown_boot.exe" if SYSTEM == "Windows" else "_markitdown_boot")
+                final = DIST_DIR / ("markitdown.exe" if SYSTEM == "Windows" else "markitdown")
+                if boot.exists():
+                    if SYSTEM == "Darwin" and shutil.which("install_name_tool"):
+                        subprocess.run(
+                            ["install_name_tool", "-add_rpath", "@executable_path/_internal", str(boot)],
+                            check=False,
+                            capture_output=True,
+                        )
+                    elif SYSTEM == "Linux" and shutil.which("patchelf"):
+                        subprocess.run(
+                            ["patchelf", "--set-rpath", "$ORIGIN/_internal", str(boot)],
+                            check=False,
+                            capture_output=True,
+                        )
+                    shutil.move(str(boot), str(final))
+                    ok("Renamed _markitdown_boot -> markitdown")
+                ok("Flattened dist/markitdown/ -> dist/")
+        else:
+            # Onefile: tesseract/exiftool are bundled inside the exe.
+            # Remove the redundant external copies.
+            for subdir in ("tesseract", "exiftool"):
+                d = DIST_DIR / "markitdown" / subdir
+                if d.is_dir():
+                    shutil.rmtree(d)
+                    ok(f"Removed redundant {subdir}/ (bundled in exe)")
+            for helper in ("render_page.py", "probe_uno.py"):
+                p = DIST_DIR / "markitdown" / helper
+                if p.is_file():
+                    p.unlink()
+            # Remove empty markitdown/ directory
+            markitdown_dir = DIST_DIR / "markitdown"
+            if markitdown_dir.is_dir() and not any(markitdown_dir.iterdir()):
+                markitdown_dir.rmdir()
+            ok("Onefile: dist/ contains only the single executable")
 
         print_output_tree()
 
