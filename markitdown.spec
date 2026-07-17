@@ -2,7 +2,7 @@
 #
 # PyInstaller spec for MarkItDown onefile CLI.
 # Produces a single dist/markitdown.exe (self-contained, no runtime deps).
-# Tesseract is NOT embedded; place alongside the executable.
+# Tesseract, ExifTool, and helper scripts are bundled inside the exe.
 #
 # Build:
 #   python scripts/build.py
@@ -105,6 +105,23 @@ datas.extend(_collect_package_as_datas("magika"))
 _mark("collecting onnxruntime")
 datas.extend(_collect_package_as_datas("onnxruntime"))
 _mark("datas collection done")
+
+# Bundle tesseract, exiftool, and helper scripts into the exe.
+# Build script downloads these into dist/markitdown/ BEFORE PyInstaller runs.
+_repo = Path(os.path.dirname(os.path.abspath(SPECPATH))) if 'SPECPATH' in dir() else Path.cwd()
+_dist_markitdown = _repo / "dist" / "markitdown"
+
+for _name in ("tesseract", "exiftool"):
+    _dir = _dist_markitdown / _name
+    if _dir.is_dir():
+        datas.append((str(_dir), _name))
+        _mark(f"bundled {_name}")
+
+for _script in ("render_page.py", "probe_uno.py"):
+    _path = _repo / "scripts" / _script
+    if _path.is_file():
+        datas.append((str(_path), "."))
+        _mark(f"bundled {_script}")
 
 # Explicitly collect libpython shared library to avoid PYI-2973 (Linux/macOS)
 import sysconfig, glob as _glob, subprocess, ctypes.util

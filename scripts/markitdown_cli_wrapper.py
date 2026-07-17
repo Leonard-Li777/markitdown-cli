@@ -8,12 +8,20 @@ import sys
 import os
 import platform
 
-# --- Tesseract path setup ---
+# --- Base directories ---
 _is_win = platform.system() == "Windows"
-_exe_dir = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, 'frozen', False) else __file__))
+_is_frozen = getattr(sys, 'frozen', False)
+_exe_dir = os.path.dirname(os.path.abspath(sys.executable if _is_frozen else __file__))
+# In onefile mode, bundled files are extracted to sys._MEIPASS (temp dir).
+# In onedir mode, _MEIPASS == exe_dir. Always check _MEIPASS first.
+_meipass = getattr(sys, '_MEIPASS', _exe_dir) if _is_frozen else _exe_dir
+
+# --- Tesseract path setup ---
 _tess_exe_name = "tesseract.exe" if _is_win else "tesseract"
 
 _candidates = [
+    os.path.join(_meipass, "tesseract", _tess_exe_name),
+    os.path.join(_meipass, "tesseract", "bin", _tess_exe_name),
     os.path.join(_exe_dir, _tess_exe_name),
     os.path.join(_exe_dir, "tesseract", _tess_exe_name),
     os.path.join(_exe_dir, "tesseract", "bin", _tess_exe_name),
@@ -47,9 +55,13 @@ if tesseract_exe:
                 if _lib_candidate not in existing:
                     os.environ[ld_key] = _lib_candidate + os.pathsep + existing
                 break
-    # tessdata
+    # tessdata — check extraction dir first, then exe dir
+    _tess_dir = os.path.dirname(tesseract_exe)
     for td in [
-        os.path.join(os.path.dirname(tesseract_exe), "tessdata"),
+        os.path.join(_tess_dir, "tessdata"),
+        os.path.join(_meipass, "tessdata"),
+        os.path.join(_meipass, "tesseract", "tessdata"),
+        os.path.join(_meipass, "tesseract", "share", "tessdata"),
         os.path.join(_exe_dir, "tessdata"),
         os.path.join(_exe_dir, "tesseract", "tessdata"),
         os.path.join(_exe_dir, "tesseract", "share", "tessdata"),
@@ -61,6 +73,7 @@ if tesseract_exe:
 # --- ExifTool path setup ---
 _exiftool_exe_name = "exiftool.exe" if _is_win else "exiftool"
 _exiftool_candidates = [
+    os.path.join(_meipass, "exiftool", _exiftool_exe_name),
     os.path.join(_exe_dir, _exiftool_exe_name),
     os.path.join(_exe_dir, "exiftool", _exiftool_exe_name),
 ]
@@ -70,7 +83,7 @@ for c in _exiftool_candidates:
         break
 
 # --- Plugin discovery fix for frozen builds ---
-if getattr(sys, 'frozen', False):
+if _is_frozen:
     import importlib.metadata as md
     _orig_entry_points = md.entry_points
 
