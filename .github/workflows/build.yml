@@ -104,9 +104,9 @@ jobs:
         run: |
           echo "=== Check binary exists ==="
           if [ "${{ matrix.platform }}" = "win32" ]; then
-            EXE="dist/markitdown/markitdown.exe"
+            EXE="dist/markitdown.exe"
           else
-            EXE="dist/markitdown/markitdown"
+            EXE="dist/markitdown"
           fi
           test -f "$EXE" || { echo "FAIL: $EXE not found"; exit 1; }
 
@@ -119,14 +119,14 @@ jobs:
 
       - name: Create tar.gz archive
         if: matrix.ext == 'tar.gz'
-        run: tar -czf "markitdown-bin-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz" -C dist/markitdown .
+        run: tar -czf "markitdown-bin-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz" -C dist .
 
       - name: Create zip archive
         if: matrix.ext == 'zip'
         shell: pwsh
         run: |
           $name = "markitdown-bin-${{ matrix.platform }}-${{ matrix.arch }}"
-          Compress-Archive -Path "dist/markitdown/*" -DestinationPath "$name.zip" -CompressionLevel Optimal
+          Compress-Archive -Path "dist/*" -DestinationPath "$name.zip" -CompressionLevel Optimal
 
       - uses: actions/upload-artifact@v5
         with:

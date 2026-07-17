@@ -377,7 +377,7 @@ def setup_tesseract_macos(tesseract_dir: Path):
 # ---------------------------------------------------------------------------
 def _pyinstaller_boot_exe() -> Path:
     name = "_markitdown_boot.exe" if SYSTEM == "Windows" else "_markitdown_boot"
-    # onefile: PyInstaller outputs dist/<name>.exe directly (no COLLECT subdirectory)
+    # onefile: PyInstaller outputs dist/<name>.exe directly (no subdirectory)
     onefile = DIST_DIR / name
     if onefile.is_file():
         return onefile
@@ -741,14 +741,20 @@ def main():
         print()
         ensure_encodings_in_zip()
 
-        # Step 3: bundle Tesseract into dist/markitdown/ (alongside _internal/)
+        # Step 3: bundle Tesseract into dist/ (alongside the exe)
         # MUST run before PyInstaller so the spec can bundle them via datas.
+        # Onefile: tools go to dist/tesseract/ (PyInstaller outputs to dist/ directly)
+        # Onedir:  tools go to dist/markitdown/tesseract/ (inside COLLECT dir)
         if not args.skip_tesseract:
-            # Ensure dist/markitdown is a directory (not a stale file from a failed build)
-            markitdown_dir = DIST_DIR / "markitdown"
-            if markitdown_dir.exists() and not markitdown_dir.is_dir():
-                markitdown_dir.unlink()
-            tesseract_dir = DIST_DIR / "markitdown" / "tesseract"
+            tesseract_base = DIST_DIR if args.onefile else DIST_DIR / "markitdown"
+            # Ensure parent directory exists
+            if not tesseract_base.is_dir():
+                tesseract_base.mkdir(parents=True, exist_ok=True)
+            # Remove stale file if present (e.g. from a previous failed build)
+            elif tesseract_base.exists() and not tesseract_base.is_dir():
+                tesseract_base.unlink()
+                tesseract_base.mkdir(parents=True, exist_ok=True)
+            tesseract_dir = tesseract_base / "tesseract"
             tesseract_dir.mkdir(parents=True, exist_ok=True)
 
             print()
@@ -764,10 +770,16 @@ def main():
             print()
             download_tessdata(tesseract_dir / "tessdata")
 
-        # Step 4: bundle ExifTool into dist/markitdown/
+        # Step 4: bundle ExifTool into dist/
         # MUST run before PyInstaller so the spec can bundle them via datas.
         if not args.skip_exiftool:
-            exiftool_dir = DIST_DIR / "markitdown" / "exiftool"
+            exiftool_base = DIST_DIR if args.onefile else DIST_DIR / "markitdown"
+            if not exiftool_base.is_dir():
+                exiftool_base.mkdir(parents=True, exist_ok=True)
+            elif exiftool_base.exists() and not exiftool_base.is_dir():
+                exiftool_base.unlink()
+                exiftool_base.mkdir(parents=True, exist_ok=True)
+            exiftool_dir = exiftool_base / "exiftool"
             exiftool_dir.mkdir(parents=True, exist_ok=True)
 
             print()
@@ -781,10 +793,11 @@ def main():
                 warn(f"Unsupported platform: {SYSTEM}. ExifTool not bundled.")
 
         # Step 5: copy helper scripts alongside the executable
+        scripts_base = DIST_DIR if args.onefile else DIST_DIR / "markitdown"
         for helper in ("render_page.py", "probe_uno.py"):
             src = REPO_ROOT / "scripts" / helper
             if src.exists():
-                shutil.copy2(str(src), str(DIST_DIR / "markitdown" / helper))
+                shutil.copy2(str(src), str(scripts_base / helper))
                 ok(f"{helper} copied")
 
         # Step 6: flatten — move everything from dist/markitdown/ up to dist/
@@ -827,20 +840,22 @@ def main():
                 ok("Flattened dist/markitdown/ -> dist/")
         else:
             # Onefile: tesseract/exiftool are bundled inside the exe.
-            # Remove the redundant external copies.
+            # Remove the redundant external copies from dist/.
             for subdir in ("tesseract", "exiftool"):
-                d = DIST_DIR / "markitdown" / subdir
+                d = DIST_DIR / subdir
                 if d.is_dir():
                     shutil.rmtree(d)
                     ok(f"Removed redundant {subdir}/ (bundled in exe)")
             for helper in ("render_page.py", "probe_uno.py"):
-                p = DIST_DIR / "markitdown" / helper
+                p = DIST_DIR / helper
                 if p.is_file():
                     p.unlink()
-            # Remove empty markitdown/ directory
-            markitdown_dir = DIST_DIR / "markitdown"
-            if markitdown_dir.is_dir() and not any(markitdown_dir.iterdir()):
-                markitdown_dir.rmdir()
+            # Rename _markitdown_boot -> markitdown
+            boot = DIST_DIR / ("_markitdown_boot.exe" if SYSTEM == "Windows" else "_markitdown_boot")
+            final = DIST_DIR / ("markitdown.exe" if SYSTEM == "Windows" else "markitdown")
+            if boot.exists():
+                shutil.move(str(boot), str(final))
+                ok("Renamed _markitdown_boot -> markitdown")
             ok("Onefile: dist/ contains only the single executable")
 
         print_output_tree()
