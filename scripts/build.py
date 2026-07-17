@@ -325,6 +325,12 @@ def _setup_exiftool_unix(exiftool_dir: Path):
             shutil.move(str(item), str(target))
         shutil.rmtree(extracted)
 
+    # Delete test files to prevent PyInstaller from choking on mock binaries
+    t_dir = exiftool_dir / "t"
+    if t_dir.is_dir():
+        shutil.rmtree(t_dir)
+        info("Removed ExifTool test directory")
+
     # Ensure exiftool script has execute permission
     exe = exiftool_dir / "exiftool"
     if exe.exists():
