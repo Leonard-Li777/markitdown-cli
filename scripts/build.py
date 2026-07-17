@@ -441,6 +441,7 @@ def _run_pyinstaller(
     cmd = [
         sys.executable, "-m", "PyInstaller",
         str(REPO_ROOT / "markitdown.spec"),
+        "--clean",
         "--noconfirm",
         "--log-level=INFO",
     ]
