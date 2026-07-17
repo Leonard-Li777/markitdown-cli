@@ -110,7 +110,7 @@ _mark("datas collection done")
 # Build script downloads these BEFORE PyInstaller runs.
 # Onefile: tools are at dist/tesseract/ (no subdirectory created by PyInstaller)
 # Onedir:  tools are at dist/markitdown/tesseract/ (inside COLLECT dir)
-_repo = Path(os.path.dirname(os.path.abspath(SPECPATH))) if 'SPECPATH' in dir() else Path.cwd()
+_repo = Path(SPECPATH) if 'SPECPATH' in dir() else Path.cwd()
 
 for _name in ("tesseract", "exiftool"):
     _candidates = [
@@ -429,7 +429,7 @@ a = Analysis(
         'numpy.distutils', 'numpy.testing',
         'h2', 'hpack', 'hyperframe', 'priority',
     ],
-    noarchive=True,
+    noarchive=False,
 )
 
 pyz = PYZ(a.pure, a.zipped_data)
@@ -438,8 +438,8 @@ exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
-    a.zipfiles,
     a.datas,
+    a.zipfiles,
     name='_markitdown_boot',
     debug=False,
     bootloader_ignore_signals=False,

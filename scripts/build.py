@@ -36,7 +36,10 @@ import sys
 import time
 import urllib.request
 import zipfile
+import socket
 from pathlib import Path
+
+socket.setdefaulttimeout(30)
 
 try:
     # GitHub Actions/non-TTY stdout is block-buffered by default. Force line
@@ -176,6 +179,11 @@ def download_tessdata(tessdata_dir: Path):
 # Step 2 — Tesseract per platform
 # ---------------------------------------------------------------------------
 def setup_tesseract_windows(tesseract_dir: Path):
+    exe = tesseract_dir / "tesseract.exe"
+    if exe.exists():
+        ok("Tesseract already present (skipped extract/download)")
+        return
+
     installer = DIST_DIR / "tesseract_setup.exe"
 
     if not installer.exists():
@@ -234,6 +242,11 @@ def setup_tesseract_windows(tesseract_dir: Path):
 
 
 def setup_exiftool_windows(exiftool_dir: Path):
+    exe = exiftool_dir / "exiftool.exe"
+    if exe.exists():
+        ok("ExifTool already present (skipped extract/download)")
+        return
+
     zip_file = DIST_DIR / "exiftool_setup.zip"
     temp_dir = DIST_DIR / "exiftool_temp"
 
@@ -682,8 +695,8 @@ def main():
         description="Build MarkItDown CLI with bundled Tesseract OCR"
     )
     parser.add_argument(
-        "--onefile", action="store_true",
-        help="Build single-file executable (default)",
+        "--onedir", action="store_true",
+        help="Build directory bundle instead of single-file executable",
     )
     parser.add_argument(
         "--skip-tesseract", action="store_true",
@@ -702,6 +715,7 @@ def main():
         help="Skip downloading/bundling ExifTool",
     )
     args = parser.parse_args()
+    onefile = not args.onedir
 
     print("=" * 60)
     print(f"  MarkItDown CLI Builder")
@@ -723,13 +737,27 @@ def main():
         build_version = generate_build_version()
         write_build_version(build_version)
 
+        # Extract local offline package if present to skip downloading
+        local_archive = Path(r"F:\lilun\Download\Compressed\markitdown-bin-win32-x64.zip")
+        if local_archive.exists() and SYSTEM == "Windows":
+            info(f"Found local offline package: {local_archive}")
+            try:
+                extract_target = DIST_DIR if onefile else DIST_DIR / "markitdown"
+                extract_target.mkdir(parents=True, exist_ok=True)
+                with zipfile.ZipFile(local_archive, 'r') as zip_ref:
+                    info(f"Extracting local offline package to {extract_target}...")
+                    zip_ref.extractall(extract_target)
+                ok("Local offline package extracted successfully")
+            except Exception as e:
+                warn(f"Failed to extract local offline package: {e}")
+
         # Step 2: download Tesseract & ExifTool BEFORE PyInstaller runs.
         # The spec file scans these directories during Analysis and adds them to datas.
         # They MUST exist before _run_pyinstaller() is called.
         # Onefile: tools go to dist/tesseract/ (PyInstaller outputs to dist/ directly)
         # Onedir:  tools go to dist/markitdown/tesseract/ (inside COLLECT dir)
         if not args.skip_tesseract:
-            tesseract_base = DIST_DIR if args.onefile else DIST_DIR / "markitdown"
+            tesseract_base = DIST_DIR if onefile else DIST_DIR / "markitdown"
             # Ensure parent directory exists
             if not tesseract_base.is_dir():
                 tesseract_base.mkdir(parents=True, exist_ok=True)
@@ -754,7 +782,7 @@ def main():
             download_tessdata(tesseract_dir / "tessdata")
 
         if not args.skip_exiftool:
-            exiftool_base = DIST_DIR if args.onefile else DIST_DIR / "markitdown"
+            exiftool_base = DIST_DIR if onefile else DIST_DIR / "markitdown"
             if not exiftool_base.is_dir():
                 exiftool_base.mkdir(parents=True, exist_ok=True)
             elif exiftool_base.exists() and not exiftool_base.is_dir():
@@ -774,7 +802,7 @@ def main():
                 warn(f"Unsupported platform: {SYSTEM}. ExifTool not bundled.")
 
         # Step 3: copy helper scripts alongside the executable
-        scripts_base = DIST_DIR if args.onefile else DIST_DIR / "markitdown"
+        scripts_base = DIST_DIR if onefile else DIST_DIR / "markitdown"
         for helper in ("render_page.py", "probe_uno.py"):
             src = REPO_ROOT / "scripts" / helper
             if src.exists():
@@ -783,7 +811,7 @@ def main():
 
         # Step 4: install deps + run PyInstaller (spec bundles tesseract/exiftool via datas)
         if not args.skip_deps:
-            build_markitdown(args.onefile)
+            build_markitdown(onefile)
         else:
             result = _run_pyinstaller()
             if result.returncode != 0:
@@ -802,7 +830,7 @@ def main():
         # Step 5: flatten — move everything from dist/markitdown/ up to dist/
         # For onefile, the exe is already at dist/markitdown.exe (PyInstaller output);
         # only tesseract/, exiftool/, helper scripts live in dist/markitdown/.
-        if not args.onefile:
+        if not onefile:
             app_dir = DIST_DIR / "markitdown"
             if app_dir.is_dir():
                 for item in app_dir.iterdir():
