@@ -723,26 +723,9 @@ def main():
         build_version = generate_build_version()
         write_build_version(build_version)
 
-        # Step 2: install deps + run PyInstaller
-        if not args.skip_deps:
-            build_markitdown(args.onefile)
-        else:
-            result = _run_pyinstaller()
-            if result.returncode != 0:
-                log_path = REPO_ROOT / "build" / "pyinstaller.log"
-                if log_path.is_file():
-                    tail = log_path.read_text(encoding="utf-8", errors="replace")[-4000:]
-                    print(tail, file=sys.stderr)
-                result.check_returncode()
-            _verify_pyinstaller_output()
-
-        # Post-build: ensure encodings is in base_library.zip (python-build-standalone
-        # may produce an incomplete zip, causing PYI-7634 at startup)
-        print()
-        ensure_encodings_in_zip()
-
-        # Step 3: bundle Tesseract into dist/ (alongside the exe)
-        # MUST run before PyInstaller so the spec can bundle them via datas.
+        # Step 2: download Tesseract & ExifTool BEFORE PyInstaller runs.
+        # The spec file scans these directories during Analysis and adds them to datas.
+        # They MUST exist before _run_pyinstaller() is called.
         # Onefile: tools go to dist/tesseract/ (PyInstaller outputs to dist/ directly)
         # Onedir:  tools go to dist/markitdown/tesseract/ (inside COLLECT dir)
         if not args.skip_tesseract:
@@ -770,8 +753,6 @@ def main():
             print()
             download_tessdata(tesseract_dir / "tessdata")
 
-        # Step 4: bundle ExifTool into dist/
-        # MUST run before PyInstaller so the spec can bundle them via datas.
         if not args.skip_exiftool:
             exiftool_base = DIST_DIR if args.onefile else DIST_DIR / "markitdown"
             if not exiftool_base.is_dir():
@@ -792,7 +773,7 @@ def main():
             else:
                 warn(f"Unsupported platform: {SYSTEM}. ExifTool not bundled.")
 
-        # Step 5: copy helper scripts alongside the executable
+        # Step 3: copy helper scripts alongside the executable
         scripts_base = DIST_DIR if args.onefile else DIST_DIR / "markitdown"
         for helper in ("render_page.py", "probe_uno.py"):
             src = REPO_ROOT / "scripts" / helper
@@ -800,7 +781,25 @@ def main():
                 shutil.copy2(str(src), str(scripts_base / helper))
                 ok(f"{helper} copied")
 
-        # Step 6: flatten — move everything from dist/markitdown/ up to dist/
+        # Step 4: install deps + run PyInstaller (spec bundles tesseract/exiftool via datas)
+        if not args.skip_deps:
+            build_markitdown(args.onefile)
+        else:
+            result = _run_pyinstaller()
+            if result.returncode != 0:
+                log_path = REPO_ROOT / "build" / "pyinstaller.log"
+                if log_path.is_file():
+                    tail = log_path.read_text(encoding="utf-8", errors="replace")[-4000:]
+                    print(tail, file=sys.stderr)
+                result.check_returncode()
+            _verify_pyinstaller_output()
+
+        # Post-build: ensure encodings is in base_library.zip (python-build-standalone
+        # may produce an incomplete zip, causing PYI-7634 at startup)
+        print()
+        ensure_encodings_in_zip()
+
+        # Step 5: flatten — move everything from dist/markitdown/ up to dist/
         # For onefile, the exe is already at dist/markitdown.exe (PyInstaller output);
         # only tesseract/, exiftool/, helper scripts live in dist/markitdown/.
         if not args.onefile:
