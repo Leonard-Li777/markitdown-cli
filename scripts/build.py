@@ -79,8 +79,8 @@ WINDOWS_TESSERACT_URL = (
 )
 
 EXIFTOOL_VERSION = "13.59"
-WINDOWS_EXIFTOOL_URL = f"https://sourceforge.net/projects/exiftool/files/exiftool-{EXIFTOOL_VERSION}_64.zip/download"
-UNIX_EXIFTOOL_URL = f"https://sourceforge.net/projects/exiftool/files/Image-ExifTool-{EXIFTOOL_VERSION}.tar.gz/download"
+WINDOWS_EXIFTOOL_URL = f"https://exiftool.org/exiftool-{EXIFTOOL_VERSION}_64.zip"
+UNIX_EXIFTOOL_URL = f"https://exiftool.org/Image-ExifTool-{EXIFTOOL_VERSION}.tar.gz"
 
 TESDATA_BASE = "https://github.com/tesseract-ocr/tessdata_fast/raw/main"
 TESSDATA_LANGS = ["eng", "chi_sim", "chi_tra"]
