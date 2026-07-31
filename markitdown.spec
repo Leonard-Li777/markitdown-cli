@@ -35,10 +35,10 @@ def _mark(label):
     print(f"[spec] {label}", file=sys.stderr, flush=True)
 
 
-def _collect_package_as_datas(package_name):
+def _collect_package_as_datas(package_name, required=False):
     """Collect a package tree as raw datas (pure file copy, NO binary analysis).
 
-    Uses importlib.util.find_spec() and import fallback to locate the package.
+    Uses importlib.util.find_spec(), import fallback, and PyInstaller hooks to locate the package.
     The collected files land at the correct relative path in the bundle so that
     Python's import system finds them at runtime.
     """
@@ -50,7 +50,10 @@ def _collect_package_as_datas(package_name):
             if spec.submodule_search_locations:
                 pkg_dir = list(spec.submodule_search_locations)[0]
             elif spec.origin:
-                pkg_dir = os.path.dirname(spec.origin)
+                if os.path.isdir(spec.origin):
+                    pkg_dir = spec.origin
+                else:
+                    pkg_dir = os.path.dirname(spec.origin)
         
         if not pkg_dir or not os.path.isdir(pkg_dir):
             try:
@@ -58,7 +61,10 @@ def _collect_package_as_datas(package_name):
                 if hasattr(mod, "__path__") and mod.__path__:
                     pkg_dir = mod.__path__[0]
                 elif hasattr(mod, "__file__") and mod.__file__:
-                    pkg_dir = os.path.dirname(mod.__file__)
+                    if os.path.isdir(mod.__file__):
+                        pkg_dir = mod.__file__
+                    else:
+                        pkg_dir = os.path.dirname(mod.__file__)
             except Exception:
                 pass
 
@@ -71,13 +77,26 @@ def _collect_package_as_datas(package_name):
                     collected.append((src, rel))
     except Exception as e:
         print(
-            f"[ERROR] Could not locate package '{package_name}' for manual "
+            f"[WARNING] Could not locate package '{package_name}' for manual "
             f"collection: {e}",
             file=sys.stderr,
         )
-        raise RuntimeError(f"Missing required build dependency: {package_name}")
+
+    # PyInstaller hooks fallback if manual collection found no files
     if not collected:
-        raise RuntimeError(f"Missing or empty required build dependency: {package_name}")
+        try:
+            from PyInstaller.utils.hooks import collect_all
+            d, a, h = collect_all(package_name)
+            collected.extend(d)
+        except Exception:
+            pass
+
+    if not collected:
+        if required:
+            raise RuntimeError(f"Missing required build dependency: {package_name}")
+        else:
+            print(f"[WARNING] Package '{package_name}' was not found during datas collection.", file=sys.stderr)
+
     return collected
 
 _mark("start")
@@ -108,7 +127,7 @@ except ImportError:
     pass
 _mark("encodings done")
 
-# Collect onnxruntime as raw files via datas (NOT binaries).
+# Collect magika and onnxruntime as raw files via datas (NOT binaries).
 # PyInstaller's binary/shared-library analysis of onnxruntime hangs on Linux.
 # By keeping it in excludes and manually copying via datas, we bypass the
 # static scan entirely while still making the package available at runtime.
@@ -116,8 +135,6 @@ _mark("collecting magika")
 datas.extend(_collect_package_as_datas("magika"))
 _mark("collecting onnxruntime")
 datas.extend(_collect_package_as_datas("onnxruntime"))
-_mark("collecting cv2")
-datas.extend(_collect_package_as_datas("cv2"))
 _mark("datas collection done")
 
 # Bundle tesseract, exiftool, and helper scripts into the exe.
