@@ -490,6 +490,7 @@ def run_extraction(
     ocr_engine: str = "paddleocr",
     ocr_lang: str = "eng+chi_sim",
     ocr_model_size: Optional[str] = None,
+    enable_ocr: bool = False,
     thumbnail_format: str = "png",
     exiftool_path: Optional[str] = None,
     max_workers: int = 4,
@@ -520,11 +521,13 @@ def run_extraction(
         except Exception:
             pass
 
+    is_ocr_enabled = enable_ocr or ("ocr" in extract_list)
     kwargs = {
         "pages_spec_str": pages_spec_str,
         "ocr_engine": ocr_engine,
         "ocr_lang": ocr_lang,
         "ocr_model_size": ocr_model_size,
+        "enable_ocr": is_ocr_enabled,
         "thumbnail_format": thumbnail_format,
     }
     if exiftool_path:
@@ -708,6 +711,7 @@ def extract_to_json(
     ocr_engine: str = "paddleocr",
     ocr_lang: str = "eng+chi_sim",
     ocr_model_size: Optional[str] = None,
+    enable_ocr: bool = False,
     thumbnail_format: str = "png",
     exiftool_path: Optional[str] = None,
     output_paths: Optional[dict[str, str]] = None,
@@ -726,6 +730,7 @@ def extract_to_json(
         ocr_engine=ocr_engine,
         ocr_lang=ocr_lang,
         ocr_model_size=ocr_model_size,
+        enable_ocr=enable_ocr,
         thumbnail_format=thumbnail_format,
         exiftool_path=exiftool_path,
         max_workers=max_workers,

@@ -144,6 +144,10 @@ class _Handler(BaseHTTPRequestHandler):
             metadata_out = body.get("metadata_out")
             magika_out = body.get("magika_out")
 
+            enable_ocr = body.get("enable_ocr") or body.get("use_ocr")
+            if isinstance(enable_ocr, str):
+                enable_ocr = enable_ocr.lower() in ("true", "1", "yes")
+
             if isinstance(extract_str, list):
                 extract_str = ",".join(extract_str)
 
@@ -175,7 +179,12 @@ class _Handler(BaseHTTPRequestHandler):
             file_name = fields.get("file", {}).get("name", "upload")
             extract_str = fields.get("extract", "")
             pages = fields.get("pages")
+            ocr_engine = fields.get("ocr_engine", "paddleocr")
             ocr_lang = fields.get("ocr_lang", "eng+chi_sim")
+            ocr_model_size = fields.get("ocr_model_size") or fields.get("ocr_size")
+            enable_ocr = fields.get("enable_ocr") or fields.get("use_ocr")
+            if isinstance(enable_ocr, str):
+                enable_ocr = enable_ocr.lower() in ("true", "1", "yes")
             thumb_fmt = fields.get("thumbnail_format", "png")
             thumbnail_out = fields.get("thumbnail_out")
             text_out = fields.get("text_out")
@@ -205,6 +214,12 @@ class _Handler(BaseHTTPRequestHandler):
             if e not in valid:
                 self._send_error(400, f"Unknown extract indicator: {e}")
                 return
+
+        # Enable OCR if explicitly requested via enable_ocr/use_ocr OR if 'ocr' is in extract_list
+        if enable_ocr is None:
+            enable_ocr = "ocr" in extract_list
+        else:
+            enable_ocr = bool(enable_ocr) or ("ocr" in extract_list)
 
         # Save to temp file for processors that need a path
         ext = os.path.splitext(file_name)[1] or ".bin"
@@ -261,6 +276,7 @@ class _Handler(BaseHTTPRequestHandler):
                 ocr_engine=ocr_engine,
                 ocr_lang=ocr_lang,
                 ocr_model_size=ocr_model_size,
+                enable_ocr=enable_ocr,
                 thumbnail_format=thumb_fmt,
                 exiftool_path=exiftool_path,
                 output_paths=output_paths if output_paths else None,
@@ -381,6 +397,19 @@ def run_server(host: str = "127.0.0.1", port: int = 5052,
         os.makedirs(os.path.dirname(os.path.abspath(port_file)), exist_ok=True)
         with open(port_file, "w") as f:
             f.write(str(port))
+
+    import threading
+
+    def _watch_parent():
+        """当父进程退出或管道 EOF 时自动自我终止，防止孤儿进程残留"""
+        try:
+            sys.stdin.read()
+        except Exception:
+            pass
+        os._exit(0)
+
+    t = threading.Thread(target=_watch_parent, daemon=True)
+    t.start()
 
     try:
         server.serve_forever()
