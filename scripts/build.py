@@ -79,8 +79,14 @@ WINDOWS_TESSERACT_URL = (
 )
 
 EXIFTOOL_VERSION = "13.59"
-WINDOWS_EXIFTOOL_URL = f"https://sourceforge.net/projects/exiftool/files/exiftool-{EXIFTOOL_VERSION}_64.zip/download"
-UNIX_EXIFTOOL_URL = f"https://sourceforge.net/projects/exiftool/files/Image-ExifTool-{EXIFTOOL_VERSION}.tar.gz/download"
+WINDOWS_EXIFTOOL_URLS = [
+    f"https://sourceforge.net/projects/exiftool/files/exiftool-{EXIFTOOL_VERSION}_64.zip/download",
+    f"https://github.com/exiftool/exiftool/releases/download/{EXIFTOOL_VERSION}/exiftool-{EXIFTOOL_VERSION}_64.zip",
+]
+UNIX_EXIFTOOL_URLS = [
+    f"https://github.com/exiftool/exiftool/archive/refs/tags/{EXIFTOOL_VERSION}.tar.gz",
+    f"https://sourceforge.net/projects/exiftool/files/Image-ExifTool-{EXIFTOOL_VERSION}.tar.gz/download",
+]
 
 TESDATA_BASE = "https://github.com/tesseract-ocr/tessdata_fast/raw/main"
 TESSDATA_LANGS = ["eng", "chi_sim", "chi_tra"]
@@ -93,6 +99,37 @@ def info(msg):  print(f"[*] {msg}")
 def ok(msg):    print(f"[+] {msg}")
 def warn(msg):  print(f"[!] {msg}")
 def fail(msg):  print(f"[!] {msg}"); sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Download helper with multi-URL fallback & retry
+# ---------------------------------------------------------------------------
+def download_file(url_or_urls, dest, max_retries=3):
+    urls = [url_or_urls] if isinstance(url_or_urls, str) else url_or_urls
+    info(f"Downloading {dest.name}...")
+    last_err = None
+    for url in urls:
+        for attempt in range(1, max_retries + 1):
+            try:
+                ctx = ssl.create_default_context()
+                req = urllib.request.Request(url, headers={"User-Agent": "MarkItDown-Build/1.0"})
+                with urllib.request.urlopen(req, context=ctx, timeout=120) as resp:
+                    with open(dest, "wb") as f:
+                        shutil.copyfileobj(resp, f)
+                size = dest.stat().st_size
+                ok(f"{dest.name} ({size // 1024} KB)")
+                return
+            except Exception as e:
+                last_err = e
+                if dest.exists():
+                    dest.unlink()
+                if attempt < max_retries:
+                    warn(f"Download attempt {attempt}/{max_retries} for {url} failed: {e}. Retrying...")
+                    time.sleep(2 * attempt)
+                else:
+                    warn(f"All {max_retries} attempts failed for {url}: {e}")
+    if last_err:
+        raise last_err
 
 
 # ---------------------------------------------------------------------------
@@ -139,32 +176,6 @@ def restore_submodule():
     ok("Submodule restored")
 
 
-# ---------------------------------------------------------------------------
-# Download helpers
-# ---------------------------------------------------------------------------
-def download_file(url, dest, max_retries=3):
-    info(f"Downloading {dest.name}...")
-    for attempt in range(1, max_retries + 1):
-        try:
-            ctx = ssl.create_default_context()
-            req = urllib.request.Request(url, headers={"User-Agent": "MarkItDown-Build/1.0"})
-            with urllib.request.urlopen(req, context=ctx, timeout=120) as resp:
-                with open(dest, "wb") as f:
-                    shutil.copyfileobj(resp, f)
-            size = dest.stat().st_size
-            ok(f"{dest.name} ({size // 1024} KB)")
-            return
-        except Exception as e:
-            if dest.exists():
-                dest.unlink()
-            if attempt < max_retries:
-                warn(f"Download attempt {attempt}/{max_retries} failed: {e}. Retrying...")
-                import time
-                time.sleep(2 * attempt)
-            else:
-                raise
-
-
 def download_tessdata(tessdata_dir: Path):
     tessdata_dir.mkdir(parents=True, exist_ok=True)
     for lang in TESSDATA_LANGS:
@@ -184,32 +195,33 @@ def setup_tesseract_windows(tesseract_dir: Path):
         ok("Tesseract already present (skipped extract/download)")
         return
 
-    installer = DIST_DIR / "tesseract_setup.exe"
+    archive = DIST_DIR / "tesseract_setup.exe"
+    if not archive.exists():
+        download_file(WINDOWS_TESSERACT_URL, archive)
 
-    if not installer.exists():
-        download_file(WINDOWS_TESSERACT_URL, installer)
-
-    seven_zip = (
-        shutil.which("7z")
-        or shutil.which("7za")
-        or (Path("C:/Program Files/7-Zip/7z.exe") if Path("C:/Program Files/7-Zip/7z.exe").exists() else None)
-        or (Path("C:/Program Files (x86)/7-Zip/7z.exe") if Path("C:/Program Files (x86)/7-Zip/7z.exe").exists() else None)
-    )
-
-    if seven_zip:
-        info("Extracting with 7-Zip...")
+    # Extract installer via silent install
+    info("Extracting Tesseract...")
+    tesseract_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        temp_inst = DIST_DIR / "tess_inst"
         subprocess.run(
-            [str(seven_zip), "x", str(installer), f"-o{str(tesseract_dir)}", "-y"],
-            capture_output=True, check=False,
+            [str(archive), "/VERYSILENT", "/SUPPRESSMSGBOXES", f"/DIR={temp_inst}"],
+            check=True,
         )
+        for item in temp_inst.iterdir():
+            target = tesseract_dir / item.name
+            if target.exists():
+                if target.is_dir():
+                    shutil.rmtree(target)
+                else:
+                    target.unlink()
+            shutil.move(str(item), str(target))
+        shutil.rmtree(temp_inst)
+    except Exception as e:
+        warn(f"Silent install failed: {e}")
 
-    exe = tesseract_dir / "tesseract.exe"
-    if not exe.exists():
-        info("Running installer silently (may need admin elevation)...")
-        subprocess.run(
-            [str(installer), "/VERYSILENT", "/SUPPRESSMSGBOXES", f"/DIR={tesseract_dir}"],
-            check=False, timeout=180,
-        )
+    archive.unlink()
+    info("Removed Tesseract installer archive")
 
     if not exe.exists():
         found = list(tesseract_dir.rglob("tesseract.exe"))
@@ -258,7 +270,7 @@ def setup_exiftool_windows(exiftool_dir: Path):
                 zip_file.unlink()
             except Exception:
                 pass
-        download_file(WINDOWS_EXIFTOOL_URL, zip_file)
+        download_file(WINDOWS_EXIFTOOL_URLS, zip_file)
 
     if temp_dir.exists():
         shutil.rmtree(temp_dir)
