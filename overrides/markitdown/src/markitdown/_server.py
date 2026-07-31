@@ -401,11 +401,24 @@ def run_server(host: str = "127.0.0.1", port: int = 5052,
     import threading
 
     def _watch_parent():
-        """当父进程退出或管道 EOF 时自动自我终止，防止孤儿进程残留"""
-        try:
-            sys.stdin.read()
-        except Exception:
-            pass
+        """当父进程退出或句柄销毁时自动自我终止，防止孤儿进程残留"""
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                kernel32 = ctypes.windll.kernel32
+                ppid = os.getppid()
+                # SYNCHRONIZE = 0x00100000
+                h_parent = kernel32.OpenProcess(0x00100000, False, ppid)
+                if h_parent:
+                    kernel32.WaitForSingleObject(h_parent, 0xFFFFFFFF)
+                    kernel32.CloseHandle(h_parent)
+            except Exception:
+                pass
+        else:
+            try:
+                sys.stdin.read()
+            except Exception:
+                pass
         os._exit(0)
 
     t = threading.Thread(target=_watch_parent, daemon=True)

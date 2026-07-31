@@ -322,7 +322,7 @@ def _setup_exiftool_unix(exiftool_dir: Path):
     """Download Image-ExifTool-*.tar.gz, extract the exiftool Perl script + lib/."""
     archive = DIST_DIR / f"Image-ExifTool-{EXIFTOOL_VERSION}.tar.gz"
     if not archive.exists():
-        download_file(UNIX_EXIFTOOL_URL, archive)
+        download_file(UNIX_EXIFTOOL_URLS, archive)
 
     import tarfile
     info("Extracting ExifTool...")
