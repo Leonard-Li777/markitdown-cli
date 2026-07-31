@@ -38,25 +38,37 @@ def _mark(label):
 def _collect_package_as_datas(package_name):
     """Collect a package tree as raw datas (pure file copy, NO binary analysis).
 
-    Uses importlib.util.find_spec() to locate the package without importing it,
-    so PyInstaller's static analysis never touches magika/onnxruntime.
+    Uses importlib.util.find_spec() and import fallback to locate the package.
     The collected files land at the correct relative path in the bundle so that
     Python's import system finds them at runtime.
     """
     collected = []
     try:
+        pkg_dir = None
         spec = importlib.util.find_spec(package_name)
-        if spec and spec.origin:
-            pkg_dir = os.path.dirname(spec.origin)
-            if os.path.isdir(pkg_dir):
-                for root, _dirs, files in os.walk(pkg_dir):
-                    for f in files:
-                        src = os.path.join(root, f)
-                        rel = os.path.relpath(
-                            os.path.dirname(src),
-                            os.path.dirname(pkg_dir),
-                        )
-                        collected.append((src, rel))
+        if spec:
+            if spec.submodule_search_locations:
+                pkg_dir = list(spec.submodule_search_locations)[0]
+            elif spec.origin:
+                pkg_dir = os.path.dirname(spec.origin)
+        
+        if not pkg_dir or not os.path.isdir(pkg_dir):
+            try:
+                mod = importlib.import_module(package_name)
+                if hasattr(mod, "__path__") and mod.__path__:
+                    pkg_dir = mod.__path__[0]
+                elif hasattr(mod, "__file__") and mod.__file__:
+                    pkg_dir = os.path.dirname(mod.__file__)
+            except Exception:
+                pass
+
+        if pkg_dir and os.path.isdir(pkg_dir):
+            parent_dir = os.path.dirname(pkg_dir)
+            for root, _dirs, files in os.walk(pkg_dir):
+                for f in files:
+                    src = os.path.join(root, f)
+                    rel = os.path.relpath(os.path.dirname(src), parent_dir)
+                    collected.append((src, rel))
     except Exception as e:
         print(
             f"[ERROR] Could not locate package '{package_name}' for manual "
