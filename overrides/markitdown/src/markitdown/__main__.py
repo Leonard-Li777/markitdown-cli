@@ -523,6 +523,7 @@ def main():
     use_plugins = args.use_plugins
     if args.use_ocr:
         use_plugins = True
+        md_kwargs["use_ocr"] = True
         md_kwargs["ocr_engine"] = args.ocr_engine
         md_kwargs["use_tesseract"] = args.ocr_engine == "tesseract"
         md_kwargs["ocr_model_size"] = getattr(args, "ocr_model_size", None)
