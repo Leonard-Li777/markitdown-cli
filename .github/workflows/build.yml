@@ -141,9 +141,9 @@ jobs:
           echo "=== Verifying created archive: $ARCHIVE ==="
           test -f "$ARCHIVE" || { echo "FAIL: Archive $ARCHIVE not found"; exit 1; }
           if [ "${{ matrix.ext }}" = "zip" ]; then
-            unzip -l "$ARCHIVE" | grep -q "models/" || { echo "FAIL: Zip archive $ARCHIVE does not contain models/ directory!"; exit 1; }
+            unzip -l "$ARCHIVE" | grep "models/" >/dev/null || { echo "FAIL: Zip archive $ARCHIVE does not contain models/ directory!"; exit 1; }
           else
-            tar -tzf "$ARCHIVE" | grep -q "models/" || { echo "FAIL: Tar archive $ARCHIVE does not contain models/ directory!"; exit 1; }
+            tar -tzf "$ARCHIVE" | grep "models/" >/dev/null || { echo "FAIL: Tar archive $ARCHIVE does not contain models/ directory!"; exit 1; }
           fi
           echo "Archive verification SUCCESS: models/ present in $ARCHIVE"
 
