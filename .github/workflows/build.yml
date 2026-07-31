@@ -71,7 +71,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pyinstaller pytesseract
+          pip install pyinstaller pytesseract onnxruntime opencv-python-headless numpy pdfminer.six pdfplumber PyMuPDF mammoth python-docx python-pptx pandas openpyxl Pillow
+          python -c "import sys; sys.path.insert(0, '.'); import scripts.build as b; b.apply_overrides()"
           pip install -e markitdown/packages/markitdown
           pip install -e markitdown/packages/markitdown-ocr
 

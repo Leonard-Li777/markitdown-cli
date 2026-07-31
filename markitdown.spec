@@ -135,6 +135,8 @@ _mark("collecting magika")
 datas.extend(_collect_package_as_datas("magika"))
 _mark("collecting onnxruntime")
 datas.extend(_collect_package_as_datas("onnxruntime"))
+_mark("collecting cv2")
+datas.extend(_collect_package_as_datas("cv2"))
 _mark("datas collection done")
 
 # Bundle tesseract, exiftool, and helper scripts into the exe.
