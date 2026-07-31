@@ -356,33 +356,60 @@ def setup_exiftool_linux(exiftool_dir: Path):
 
 def setup_models_modelscope(models_dir: Path):
     models_dir.mkdir(parents=True, exist_ok=True)
+    ms_base = "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/master"
+    hf_base = "https://huggingface.co/PaddlePaddle"
+
+    # Map each model file to candidate URLs (Hugging Face PaddlePaddle/pp-ocrv6 prioritized)
     required_files = {
         # Tiny models (~5MB)
-        "PP-OCRv6_det_tiny.onnx": ("RapidAI/RapidOCR", "onnx/PP-OCRv6/det/PP-OCRv6_det_tiny.onnx"),
-        "PP-OCRv6_rec_tiny.onnx": ("RapidAI/RapidOCR", "onnx/PP-OCRv6/rec/PP-OCRv6_rec_tiny.onnx"),
-        "ppocr_keys_v6_tiny.txt": ("RapidAI/RapidOCR", "paddle/PP-OCRv6/rec/PP-OCRv6_rec_tiny/ppocrv6_tiny_dict.txt"),
+        "PP-OCRv6_det_tiny.onnx": [
+            f"{hf_base}/PP-OCRv6_tiny_det_onnx/resolve/main/inference.onnx",
+            f"{ms_base}/onnx/PP-OCRv6/det/PP-OCRv6_det_tiny.onnx",
+        ],
+        "PP-OCRv6_rec_tiny.onnx": [
+            f"{hf_base}/PP-OCRv6_tiny_rec_onnx/resolve/main/inference.onnx",
+            f"{ms_base}/onnx/PP-OCRv6/rec/PP-OCRv6_rec_tiny.onnx",
+        ],
+        "ppocr_keys_v6_tiny.txt": [
+            f"{ms_base}/paddle/PP-OCRv6/rec/PP-OCRv6_rec_tiny/ppocrv6_tiny_dict.txt",
+        ],
         # Small models (~30MB)
-        "PP-OCRv6_det_small.onnx": ("RapidAI/RapidOCR", "onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx"),
-        "PP-OCRv6_rec_small.onnx": ("RapidAI/RapidOCR", "onnx/PP-OCRv6/rec/PP-OCRv6_rec_small.onnx"),
-        "ppocr_keys_v6_small.txt": ("RapidAI/RapidOCR", "paddle/PP-OCRv6/rec/PP-OCRv6_rec_small/ppocrv6_small_dict.txt"),
+        "PP-OCRv6_det_small.onnx": [
+            f"{hf_base}/PP-OCRv6_small_det_onnx/resolve/main/inference.onnx",
+            f"{ms_base}/onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx",
+        ],
+        "PP-OCRv6_rec_small.onnx": [
+            f"{hf_base}/PP-OCRv6_small_rec_onnx/resolve/main/inference.onnx",
+            f"{ms_base}/onnx/PP-OCRv6/rec/PP-OCRv6_rec_small.onnx",
+        ],
+        "ppocr_keys_v6_small.txt": [
+            f"{ms_base}/paddle/PP-OCRv6/rec/PP-OCRv6_rec_small/ppocrv6_dict.txt",
+        ],
     }
     missing = [f for f in required_files if not (models_dir / f).exists()]
     if not missing:
         ok("PP-OCR ONNX models already present in models/")
         return
 
-    info("Downloading PP-OCR ONNX models from ModelScope...")
-    try:
-        from modelscope.hub.file_download import model_file_download
-        for local_name, (model_id, file_path) in required_files.items():
-            dest = models_dir / local_name
-            if not dest.exists():
-                info(f"Downloading {local_name} from ModelScope ({model_id})...")
-                downloaded = model_file_download(model_id=model_id, file_path=file_path)
-                shutil.copy2(downloaded, dest)
+    info("Downloading PP-OCR ONNX models (Primary: HuggingFace PaddlePaddle/pp-ocrv6)...")
+    for local_name, urls in required_files.items():
+        dest = models_dir / local_name
+        if not dest.exists():
+            info(f"Downloading {local_name}...")
+            download_success = False
+            for url in urls:
+                try:
+                    download_file(url, dest)
+                    download_success = True
+                    break
+                except Exception as e:
+                    warn(f"Failed downloading {local_name} from {url}: {e}")
+            if download_success:
                 ok(f"Saved {local_name}")
-    except Exception as e:
-        warn(f"Failed to download models from ModelScope: {e}")
+
+    still_missing = [f for f in required_files if not (models_dir / f).exists()]
+    if still_missing:
+        fail(f"CRITICAL BUILD FAILURE: Required ONNX model files missing after download attempt: {still_missing}")
 
 
 def setup_tesseract_linux(tesseract_dir: Path):

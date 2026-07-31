@@ -110,6 +110,12 @@ jobs:
           fi
           test -f "$EXE" || { echo "FAIL: $EXE not found"; exit 1; }
 
+          echo "=== Check models directory & files ==="
+          test -d "dist/models" || { echo "FAIL: dist/models directory missing!"; exit 1; }
+          MODEL_COUNT=$(ls -1 "dist/models" | wc -l)
+          echo "Found $MODEL_COUNT model files in dist/models"
+          test "$MODEL_COUNT" -ge 6 || { echo "FAIL: Expected at least 6 model files in dist/models, found $MODEL_COUNT!"; exit 1; }
+
           echo "=== onefile mode: all deps bundled inside exe ==="
           SIZE=$(stat -c%s "$EXE" 2>/dev/null || stat -f%z "$EXE" 2>/dev/null)
           echo "Executable size: $(( SIZE / 1024 / 1024 )) MB"
@@ -126,7 +132,20 @@ jobs:
         shell: pwsh
         run: |
           $name = "markitdown-bin-${{ matrix.platform }}-${{ matrix.arch }}"
-          Compress-Archive -Path "dist/*" -DestinationPath "$name.zip" -CompressionLevel Optimal
+          Get-ChildItem -Path "dist" | Compress-Archive -DestinationPath "$name.zip" -CompressionLevel Optimal
+
+      - name: Verify archive contents
+        shell: bash
+        run: |
+          ARCHIVE="markitdown-bin-${{ matrix.platform }}-${{ matrix.arch }}.${{ matrix.ext }}"
+          echo "=== Verifying created archive: $ARCHIVE ==="
+          test -f "$ARCHIVE" || { echo "FAIL: Archive $ARCHIVE not found"; exit 1; }
+          if [ "${{ matrix.ext }}" = "zip" ]; then
+            unzip -l "$ARCHIVE" | grep -q "models/" || { echo "FAIL: Zip archive $ARCHIVE does not contain models/ directory!"; exit 1; }
+          else
+            tar -tzf "$ARCHIVE" | grep -q "models/" || { echo "FAIL: Tar archive $ARCHIVE does not contain models/ directory!"; exit 1; }
+          fi
+          echo "Archive verification SUCCESS: models/ present in $ARCHIVE"
 
       - uses: actions/upload-artifact@v5
         with:
