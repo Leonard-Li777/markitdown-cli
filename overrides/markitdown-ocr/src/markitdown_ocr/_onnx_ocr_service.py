@@ -17,13 +17,13 @@ class ONNXPPOCRService:
         det_model_path: Optional[str] = None,
         rec_model_path: Optional[str] = None,
         keys_path: Optional[str] = None,
-        model_size: str = "small",
+        model_size: Optional[str] = None,
     ):
         self._available = False
         self.det_session = None
         self.rec_session = None
         self.char_list = []
-        self.model_size = (model_size or "small").lower()
+        self.model_size = (model_size or "").lower()
 
         try:
             import cv2
@@ -61,7 +61,7 @@ class ONNXPPOCRService:
         det_path: Optional[str],
         rec_path: Optional[str],
         keys_path: Optional[str],
-        model_size: str = "small",
+        model_size: Optional[str] = None,
     ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
         exe_dir = os.path.dirname(sys.executable)
         meipass = getattr(sys, "_MEIPASS", exe_dir)
