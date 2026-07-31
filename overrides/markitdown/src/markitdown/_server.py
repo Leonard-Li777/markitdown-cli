@@ -126,7 +126,9 @@ class _Handler(BaseHTTPRequestHandler):
             file_path = body.get("file_path", "")
             extract_str = body.get("extract", "")
             pages = body.get("pages")
+            ocr_engine = body.get("ocr_engine", "paddleocr")
             ocr_lang = body.get("ocr_lang", "eng+chi_sim")
+            ocr_model_size = body.get("ocr_model_size") or body.get("ocr_size")
             thumb_fmt = body.get("thumbnail_format")
             # Auto-detect format from thumbnail_out extension if not explicitly set
             thumbnail_out = body.get("thumbnail_out")
@@ -239,7 +241,9 @@ class _Handler(BaseHTTPRequestHandler):
                 file_bytes=file_bytes,
                 extract_list=extract_list,
                 pages_spec_str=pages,
+                ocr_engine=ocr_engine,
                 ocr_lang=ocr_lang,
+                ocr_model_size=ocr_model_size,
                 thumbnail_format=thumb_fmt,
                 exiftool_path=exiftool_path,
                 output_paths=output_paths if output_paths else None,

@@ -12,7 +12,6 @@ from markitdown._exceptions import (
     MissingDependencyException,
     MISSING_DEPENDENCY_MESSAGE,
 )
-from markitdown._page_range import resolve as resolve_pages
 from ._ocr_service import LLMVisionOCRService
 
 # Import dependencies
@@ -184,21 +183,9 @@ class PdfConverterWithOCR(DocumentConverter):
 
         markdown_content = []
 
-        # Resolve page selection
-        pages_spec = kwargs.get("pages")
-        try:
-            with pdfplumber.open(pdf_bytes) as pdf:
-                total = len(pdf.pages)
-                selected = resolve_pages(pages_spec, total)
-        except Exception:
-            selected = None
-
         try:
             with pdfplumber.open(pdf_bytes) as pdf:
                 for page_num, page in enumerate(pdf.pages, 1):
-                    if selected is not None and page_num not in selected:
-                        continue
-
                     markdown_content.append(f"\n## Page {page_num}\n")
 
                     # If OCR is enabled, interleave text and images by position
@@ -319,7 +306,7 @@ class PdfConverterWithOCR(DocumentConverter):
         # treat as scanned PDF and OCR full pages
         if ocr_service and (not markdown or not markdown.strip()):
             pdf_bytes.seek(0)
-            markdown = self._ocr_full_pages(pdf_bytes, ocr_service, selected=selected)
+            markdown = self._ocr_full_pages(pdf_bytes, ocr_service)
 
         return DocumentConverterResult(markdown=markdown)
 
@@ -351,7 +338,7 @@ class PdfConverterWithOCR(DocumentConverter):
         return images
 
     def _ocr_full_pages(
-        self, pdf_bytes: io.BytesIO, ocr_service: LLMVisionOCRService, selected: set[int] | None = None
+        self, pdf_bytes: io.BytesIO, ocr_service: LLMVisionOCRService
     ) -> str:
         """
         Fallback for scanned PDFs: Convert entire pages to images and OCR them.
@@ -360,7 +347,6 @@ class PdfConverterWithOCR(DocumentConverter):
         Args:
             pdf_bytes: PDF file as BytesIO
             ocr_service: OCR service to use
-            selected: Optional set of page numbers to process (1-indexed)
 
         Returns:
             Markdown text extracted from OCR of full pages
@@ -371,8 +357,6 @@ class PdfConverterWithOCR(DocumentConverter):
             pdf_bytes.seek(0)
             with pdfplumber.open(pdf_bytes) as pdf:
                 for page_num, page in enumerate(pdf.pages, 1):
-                    if selected is not None and page_num not in selected:
-                        continue
                     try:
                         markdown_parts.append(f"\n## Page {page_num}\n")
 
@@ -408,8 +392,6 @@ class PdfConverterWithOCR(DocumentConverter):
                 pdf_bytes.seek(0)
                 doc = fitz.open(stream=pdf_bytes.read(), filetype="pdf")
                 for page_num in range(1, doc.page_count + 1):
-                    if selected is not None and page_num not in selected:
-                        continue
                     try:
                         markdown_parts.append(f"\n## Page {page_num}\n")
                         page = doc[page_num - 1]

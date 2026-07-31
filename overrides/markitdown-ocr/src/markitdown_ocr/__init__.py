@@ -13,11 +13,13 @@ from ._ocr_service import (
     OCRResult,
     LLMVisionOCRService,
 )
+from ._onnx_ocr_service import ONNXPPOCRService
 from ._tesseract_service import TesseractOCRService
 from ._pdf_converter_with_ocr import PdfConverterWithOCR
 from ._docx_converter_with_ocr import DocxConverterWithOCR
 from ._pptx_converter_with_ocr import PptxConverterWithOCR
 from ._xlsx_converter_with_ocr import XlsxConverterWithOCR
+from ._image_converter_with_ocr import ImageConverterWithOCR
 
 __all__ = [
     "__version__",
@@ -25,9 +27,11 @@ __all__ = [
     "register_converters",
     "OCRResult",
     "LLMVisionOCRService",
+    "ONNXPPOCRService",
     "TesseractOCRService",
     "PdfConverterWithOCR",
     "DocxConverterWithOCR",
     "PptxConverterWithOCR",
     "XlsxConverterWithOCR",
+    "ImageConverterWithOCR",
 ]

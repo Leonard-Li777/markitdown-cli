@@ -79,8 +79,8 @@ WINDOWS_TESSERACT_URL = (
 )
 
 EXIFTOOL_VERSION = "13.59"
-WINDOWS_EXIFTOOL_URL = f"https://exiftool.org/exiftool-{EXIFTOOL_VERSION}_64.zip"
-UNIX_EXIFTOOL_URL = f"https://exiftool.org/Image-ExifTool-{EXIFTOOL_VERSION}.tar.gz"
+WINDOWS_EXIFTOOL_URL = f"https://sourceforge.net/projects/exiftool/files/exiftool-{EXIFTOOL_VERSION}_64.zip/download"
+UNIX_EXIFTOOL_URL = f"https://sourceforge.net/projects/exiftool/files/Image-ExifTool-{EXIFTOOL_VERSION}.tar.gz/download"
 
 TESDATA_BASE = "https://github.com/tesseract-ocr/tessdata_fast/raw/main"
 TESSDATA_LANGS = ["eng", "chi_sim", "chi_tra"]
@@ -250,14 +250,20 @@ def setup_exiftool_windows(exiftool_dir: Path):
     zip_file = DIST_DIR / "exiftool_setup.zip"
     temp_dir = DIST_DIR / "exiftool_temp"
 
-    if not zip_file.exists():
+    import zipfile
+    if not zip_file.exists() or not zipfile.is_zipfile(zip_file):
+        if zip_file.exists():
+            warn("exiftool_setup.zip is corrupted, re-downloading...")
+            try:
+                zip_file.unlink()
+            except Exception:
+                pass
         download_file(WINDOWS_EXIFTOOL_URL, zip_file)
 
     if temp_dir.exists():
         shutil.rmtree(temp_dir)
     temp_dir.mkdir(parents=True, exist_ok=True)
 
-    import zipfile
     with zipfile.ZipFile(zip_file, 'r') as zip_ref:
         zip_ref.extractall(temp_dir)
 
@@ -346,6 +352,37 @@ def setup_exiftool_macos(exiftool_dir: Path):
 
 def setup_exiftool_linux(exiftool_dir: Path):
     _setup_exiftool_unix(exiftool_dir)
+
+
+def setup_models_modelscope(models_dir: Path):
+    models_dir.mkdir(parents=True, exist_ok=True)
+    required_files = {
+        # Tiny models (~5MB)
+        "PP-OCRv6_det_tiny.onnx": ("RapidAI/RapidOCR", "onnx/PP-OCRv6/det/PP-OCRv6_det_tiny.onnx"),
+        "PP-OCRv6_rec_tiny.onnx": ("RapidAI/RapidOCR", "onnx/PP-OCRv6/rec/PP-OCRv6_rec_tiny.onnx"),
+        "ppocr_keys_v6_tiny.txt": ("RapidAI/RapidOCR", "paddle/PP-OCRv6/rec/PP-OCRv6_rec_tiny/ppocrv6_tiny_dict.txt"),
+        # Small models (~30MB)
+        "PP-OCRv6_det_small.onnx": ("RapidAI/RapidOCR", "onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx"),
+        "PP-OCRv6_rec_small.onnx": ("RapidAI/RapidOCR", "onnx/PP-OCRv6/rec/PP-OCRv6_rec_small.onnx"),
+        "ppocr_keys_v6_small.txt": ("RapidAI/RapidOCR", "paddle/PP-OCRv6/rec/PP-OCRv6_rec_small/ppocrv6_small_dict.txt"),
+    }
+    missing = [f for f in required_files if not (models_dir / f).exists()]
+    if not missing:
+        ok("PP-OCR ONNX models already present in models/")
+        return
+
+    info("Downloading PP-OCR ONNX models from ModelScope...")
+    try:
+        from modelscope.hub.file_download import model_file_download
+        for local_name, (model_id, file_path) in required_files.items():
+            dest = models_dir / local_name
+            if not dest.exists():
+                info(f"Downloading {local_name} from ModelScope ({model_id})...")
+                downloaded = model_file_download(model_id=model_id, file_path=file_path)
+                shutil.copy2(downloaded, dest)
+                ok(f"Saved {local_name}")
+    except Exception as e:
+        warn(f"Failed to download models from ModelScope: {e}")
 
 
 def setup_tesseract_linux(tesseract_dir: Path):
@@ -747,9 +784,6 @@ def main():
         # Step 1.5: generate date-based build version
         build_version = generate_build_version()
         write_build_version(build_version)
-
-
-
         # Step 2: download Tesseract & ExifTool BEFORE PyInstaller runs.
         # The spec file scans these directories during Analysis and adds them to datas.
         # They MUST exist before _run_pyinstaller() is called.
@@ -799,6 +833,10 @@ def main():
                 setup_exiftool_macos(exiftool_dir)
             else:
                 warn(f"Unsupported platform: {SYSTEM}. ExifTool not bundled.")
+
+        models_base = DIST_DIR if onefile else DIST_DIR / "markitdown"
+        setup_models_modelscope(models_base / "models")
+        setup_models_modelscope(REPO_ROOT / "models")
 
         # Step 3: copy helper scripts alongside the executable
         scripts_base = DIST_DIR if onefile else DIST_DIR / "markitdown"
@@ -880,6 +918,11 @@ def main():
             boot = DIST_DIR / ("_markitdown_boot.exe" if SYSTEM == "Windows" else "_markitdown_boot")
             final = DIST_DIR / ("markitdown.exe" if SYSTEM == "Windows" else "markitdown")
             if boot.exists():
+                if final.exists():
+                    try:
+                        final.unlink()
+                    except Exception:
+                        pass
                 shutil.move(str(boot), str(final))
                 ok("Renamed _markitdown_boot -> markitdown")
             ok("Onefile: dist/ contains only the single executable")

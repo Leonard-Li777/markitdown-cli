@@ -341,9 +341,18 @@ def main():
     ocr_group.add_argument(
         "--ocr-engine",
         type=str,
-        choices=["tesseract", "llm"],
-        default="tesseract",
-        help="OCR engine to use: 'tesseract' (default) or 'llm' (requires --llm-model).",
+        choices=["paddleocr", "tesseract", "llm"],
+        default="paddleocr",
+        help="OCR engine to use: 'paddleocr' (default, ONNX PP-OCR), 'tesseract', or 'llm'.",
+    )
+
+    ocr_group.add_argument(
+        "--ocr-model-size",
+        "--ocr-size",
+        type=str,
+        choices=["tiny", "small", "medium"],
+        default=None,
+        help="ONNX PP-OCR model size: 'tiny', 'small', or 'medium'. If omitted, searches from small to large (tiny -> small -> medium).",
     )
 
     ocr_group.add_argument(
@@ -514,7 +523,9 @@ def main():
     use_plugins = args.use_plugins
     if args.use_ocr:
         use_plugins = True
+        md_kwargs["ocr_engine"] = args.ocr_engine
         md_kwargs["use_tesseract"] = args.ocr_engine == "tesseract"
+        md_kwargs["ocr_model_size"] = getattr(args, "ocr_model_size", None)
 
         if args.ocr_engine == "tesseract":
             if args.tesseract_path:

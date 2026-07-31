@@ -82,6 +82,17 @@ for c in _exiftool_candidates:
         os.environ["EXIFTOOL_PATH"] = c
         break
 
+# --- ONNX PP-OCR models setup ---
+for m_dir in [
+    os.path.join(_meipass, "models"),
+    os.path.join(_exe_dir, "models"),
+    os.path.join(_meipass),
+    os.path.join(_exe_dir),
+]:
+    if os.path.isdir(m_dir) and any(f.endswith(".onnx") for f in os.listdir(m_dir)):
+        os.environ["PPOCR_MODELS_DIR"] = m_dir
+        break
+
 # --- Plugin discovery fix for frozen builds ---
 if _is_frozen:
     import importlib.metadata as md

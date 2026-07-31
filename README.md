@@ -35,8 +35,11 @@ python scripts/build.py
 
 ```
 dist/            ← 自包含，不依赖系统环境
-├── markitdown.exe
-├── _internal/              Python 依赖与运行时
+├── markitdown.exe          ← 单文件可执行程序 (~156MB)
+├── models/                 ← ONNX PP-OCR 超轻量模型目录（外置）
+│   ├── PP-OCRv6_det_small.onnx / rec_small.onnx / keys
+│   ├── PP-OCRv6_det_tiny.onnx / rec_tiny.onnx / keys
+│   └── PP-OCRv6_det_medium.onnx / rec_medium.onnx / keys
 ├── tesseract/              便携版 Tesseract OCR
 │   ├── tesseract.exe
 │   ├── *.dll
@@ -158,18 +161,42 @@ markitdown pdf book.xlsx -o chapter.pdf --pages "5-10"
 
 ## OCR 支持
 
+本项目内置基于 ONNX Runtime 的超轻量 **PaddleOCR (PP-OCRv6)** 识别引擎（无需安装 PaddlePaddle），同时兼容系统 Tesseract 及 LLM 视觉大模型。
+
 ```bash
-markitdown document.pdf --use-ocr --tesseract-lang eng+chi_sim
+# 默认使用 PaddleOCR (ONNX PP-OCRv6) 引擎
+markitdown document.png --use-ocr
+markitdown document.png --use-ocr --ocr-engine paddleocr
+
+# 显式指定 ONNX PP-OCR 模型规格 (tiny / small / medium)
+markitdown document.png --use-ocr --ocr-model-size tiny
+markitdown document.png --use-ocr --ocr-model-size small
+
+# 使用 Tesseract 引擎
+markitdown document.pdf --use-ocr --ocr-engine tesseract --tesseract-lang eng+chi_sim
+
+# 使用 LLM 视觉大模型引擎
 markitdown document.pdf --use-ocr --ocr-engine llm --llm-model gpt-4o
 ```
 
-| 参数 | 说明 |
-|---|---|
-| `--use-ocr` | 启用 OCR |
-| `--ocr-engine` | `tesseract`（默认）或 `llm` |
-| `--tesseract-path` | 指定 Tesseract 可执行文件路径。省略时自动检测 |
-| `--tesseract-lang` | 语言，如 `eng`、`chi_sim`、`eng+chi_sim` |
-| `--llm-model` | LLM 模型名（`--ocr-engine=llm` 时需要） |
+| 参数 | 别名 | 可选值 | 说明 |
+|---|---|---|---|
+| `--use-ocr` | — | — | 启用 OCR 识别 |
+| `--ocr-engine` | — | `paddleocr`（默认）, `tesseract`, `llm` | OCR 引擎选型。`paddleocr` 为内置 ONNX PP-OCR，`tesseract` 为经典引擎，`llm` 为视觉大模型 |
+| `--ocr-model-size` | `--ocr-size` | `tiny`, `small`, `medium` | 指定 PaddleOCR 模型规格。未传参且存在多个模型时，优先顺序按**由小到大**（`tiny` -> `small` -> `medium`）自动匹配 |
+| `--tesseract-path` | — | 路径字符串 | 指定 Tesseract 可执行文件路径。未指定时在系统路径及 `tesseract/` 目录中自动查找 |
+| `--tesseract-lang` | — | `eng` / `chi_sim` / `eng+chi_sim` | Tesseract 识别语言配置 |
+| `--llm-model` | — | `gpt-4o` / `gemini-2.0-flash` 等 | LLM 模型名称（`--ocr-engine=llm` 时使用） |
+
+### ONNX PP-OCR (PaddleOCR) 模型规格说明与性能对比
+
+模型离线文件置于可执行程序同级的 `models/` 目录中。当未指定 `--ocr-model-size` 且本地存在多个尺寸模型时，系统将按照 **由小到大（tiny -> small -> medium）** 的顺序检索使用：
+
+| 模型规格 (`--ocr-model-size`) | 模型总体积 | HTTP 服务模式响应时间 (150+ 文字框图片) | 特点与推荐场景 |
+|:---:|:---:|:---:|---|
+| **`tiny`** | **~5 MB** | **~1.5s** | **极致轻量 & 极速**：未传参时优先使用，适合低资源环境或高并发小图识别 |
+| **`small`** ⭐ | **~30 MB** | **~3.6s** | **最佳黄金平衡**：识别字符量最多，精准度高且速度快，推荐生产环境使用 |
+| **`medium`** | **~132 MB** | **~75s** | **超重模型**：识别精度极高，但 CPU 计算开销大 |
 
 ### Tesseract 自动检测（`_tesseract_service.py`）
 
@@ -394,6 +421,7 @@ Content-Type: application/json
 | `file` | file | ✅ | 上传文件（multipart 模式） |
 | `extract` | string/array | ✅ | 逗号分隔或数组：`text,document,ocr,html,metadata,magika,thumbnail` |
 | `pages` | string | 否 | 页码（仅影响 text/document/ocr/html） |
+| `ocr_model_size` | string | 否 | ONNX PP-OCR 模型规格：`"small"` (默认) / `"tiny"` / `"medium"`（别名 `ocr_size`） |
 | `ocr_lang` | string | 否 | 默认 `"eng+chi_sim"` |
 | `thumbnail_format` | string | 否 | `"png"` / `"jpg"` / `"webp"`，默认 `"png"` |
 | `thumbnail_out` | string | 否 | 缩略图文件写出路径（JSON 响应中不再内联 data） |

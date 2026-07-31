@@ -104,6 +104,8 @@ _mark("collecting magika")
 datas.extend(_collect_package_as_datas("magika"))
 _mark("collecting onnxruntime")
 datas.extend(_collect_package_as_datas("onnxruntime"))
+_mark("collecting cv2")
+datas.extend(_collect_package_as_datas("cv2"))
 _mark("datas collection done")
 
 # Bundle tesseract, exiftool, and helper scripts into the exe.
@@ -116,6 +118,7 @@ for _name in ("tesseract", "exiftool"):
     _candidates = [
         _repo / "dist" / _name,                # onefile
         _repo / "dist" / "markitdown" / _name, # onedir
+        _repo / _name,                         # repo root models dir
     ]
     for _dir in _candidates:
         if _dir.is_dir():
@@ -347,14 +350,19 @@ a = Analysis(
         'markitdown_ocr',
         'markitdown_ocr._plugin',
         'markitdown_ocr._ocr_service',
+        'markitdown_ocr._onnx_ocr_service',
         'markitdown_ocr._tesseract_service',
         'markitdown_ocr._pdf_converter_with_ocr',
         'markitdown_ocr._docx_converter_with_ocr',
         'markitdown_ocr._pptx_converter_with_ocr',
         'markitdown_ocr._xlsx_converter_with_ocr',
+        'markitdown_ocr._image_converter_with_ocr',
 
         # OCR dependencies
         'pytesseract',
+        'cv2',
+        'onnxruntime',
+        'numpy',
         'PIL',
         'PIL._imaging',
         'PIL.Image',
@@ -422,7 +430,7 @@ a = Analysis(
         'speech_recognition', 'pocketsphinx', 'sphinxbase',
         'setuptools._distutils', 'youtube_transcript_api',
         'pytest', 'unittest', 'test', 'nose',
-        'cv2', 'torch', 'tensorflow',
+        'torch', 'tensorflow',
         'onnxruntime',
         'PIL._imagingtk', 'PIL.ImageTk', 'PIL.ImageGrab',
         'pandas.io.clipboard', 'pandas.io.sql',
