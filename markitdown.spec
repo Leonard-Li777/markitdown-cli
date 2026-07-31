@@ -312,10 +312,13 @@ if sys.platform == "linux":
                 break
     _mark("libxml2/libxslt done")
 
+_markitdown_src = str((_repo / "markitdown" / "packages" / "markitdown" / "src").resolve())
+_markitdown_ocr_src = str((_repo / "markitdown" / "packages" / "markitdown-ocr" / "src").resolve())
+
 _mark("entering Analysis")
 a = Analysis(
     ['scripts/markitdown_cli_wrapper.py'],
-    pathex=[p for p in (_stdlib, _platstdlib) if p],
+    pathex=[_markitdown_src, _markitdown_ocr_src] + [p for p in (_stdlib, _platstdlib) if p],
     binaries=_binaries,
     datas=datas,
     hiddenimports=[
