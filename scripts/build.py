@@ -159,8 +159,15 @@ def apply_overrides():
         return
 
     info("Applying overrides on top of submodule...")
+    # Clear existing __pycache__ directories in submodule to avoid stale bytecode
+    for pycache in (SUBMODULE_DIR / "packages").rglob("__pycache__"):
+        if pycache.is_dir():
+            shutil.rmtree(pycache, ignore_errors=True)
+
     for src in OVERRIDES_DIR.rglob("*"):
         if src.is_file():
+            if "__pycache__" in src.parts or src.suffix in (".pyc", ".pyo"):
+                continue
             rel = src.relative_to(OVERRIDES_DIR)
             dst = SUBMODULE_DIR / "packages" / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
