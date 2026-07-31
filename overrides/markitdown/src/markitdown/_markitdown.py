@@ -160,16 +160,32 @@ class MarkItDown:
             if self._exiftool_path is None:
                 self._exiftool_path = os.getenv("EXIFTOOL_PATH")
             if self._exiftool_path is None:
+                meipass = getattr(sys, "_MEIPASS", None)
+                exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+                search_candidates = []
+                if meipass:
+                    search_candidates.extend([
+                        os.path.join(meipass, "exiftool", "exiftool.exe"),
+                        os.path.join(meipass, "exiftool", "exiftool"),
+                        os.path.join(meipass, "exiftool.exe"),
+                        os.path.join(meipass, "exiftool"),
+                    ])
+                search_candidates.extend([
+                    os.path.join(exe_dir, "exiftool", "exiftool.exe"),
+                    os.path.join(exe_dir, "exiftool", "exiftool"),
+                    os.path.join(exe_dir, "exiftool.exe"),
+                    os.path.join(exe_dir, "exiftool"),
+                    "C:\\Program Files\\exiftool\\exiftool.exe",
+                ])
+                for c in search_candidates:
+                    if os.path.isfile(c):
+                        self._exiftool_path = c
+                        break
+
+            if self._exiftool_path is None:
                 candidate = shutil.which("exiftool")
                 if candidate:
-                    candidate = os.path.abspath(candidate)
-                    if any(d == os.path.dirname(candidate) for d in [
-                        "/usr/bin", "/usr/local/bin", "/opt", "/opt/bin",
-                        "/opt/local/bin", "/opt/homebrew/bin",
-                        "C:\\Windows\\System32", "C:\\Program Files",
-                        "C:\\Program Files (x86)",
-                    ]):
-                        self._exiftool_path = candidate
+                    self._exiftool_path = os.path.abspath(candidate)
 
             self.register_converter(PlainTextConverter(), priority=PRIORITY_GENERIC_FILE_FORMAT)
             self.register_converter(ZipConverter(markitdown=self), priority=PRIORITY_GENERIC_FILE_FORMAT)

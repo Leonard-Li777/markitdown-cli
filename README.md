@@ -37,13 +37,8 @@ python scripts/build.py
 dist/            ← 自包含，不依赖系统环境
 ├── markitdown.exe          ← 单文件可执行程序 (~156MB)
 ├── models/                 ← ONNX PP-OCR 超轻量模型目录（外置）
-│   ├── PP-OCRv6_det_small.onnx / rec_small.onnx / keys
 │   ├── PP-OCRv6_det_tiny.onnx / rec_tiny.onnx / keys
-│   └── PP-OCRv6_det_medium.onnx / rec_medium.onnx / keys
-├── tesseract/              便携版 Tesseract OCR
-│   ├── tesseract.exe
-│   ├── *.dll
-│   └── tessdata/ (eng, chi_sim, chi_tra)
+│   └── PP-OCRv6_det_small.onnx / rec_small.onnx / keys
 ├── exiftool/               ExifTool 元数据
 └── render_page.py          UNO 逐页渲染脚本
 ```
@@ -198,18 +193,17 @@ markitdown document.pdf --use-ocr --ocr-engine llm --llm-model gpt-4o
 | **`small`** ⭐ | **~30 MB** | **~3.6s** | **最佳黄金平衡**：识别字符量最多，精准度高且速度快，推荐生产环境使用 |
 | **`medium`** | **~132 MB** | **~75s** | **超重模型**：识别精度极高，但 CPU 计算开销大 |
 
-### Tesseract 自动检测（`_tesseract_service.py`）
+### Tesseract 系统自动检测（`_tesseract_service.py`）
 
-当未通过 `--tesseract-path` 或环境变量指定路径时，按以下顺序自动查找：
+> **说明**：Tesseract 引擎**不在程序包中内置**。若选择使用 `--ocr-engine tesseract`，需在宿主系统环境中自行安装 Tesseract。未通过 `--tesseract-path` 参数指定路径时，按以下顺序自动查找：
 
 | 优先级 | 来源 | 说明 |
 |:---:|---|------|
-| ① | `--tesseract-path` 参数 | 用户显式指定 |
-| ② | `TESSERACT_PATH` 环境变量 | 全局环境变量 |
-| ③ | `tesseract/` 子目录 | 打包后 `markitdown.exe` 同目录下的 `tesseract/tesseract.exe` |
-| ④ | 可执行文件同目录 | 打包后 `markitdown.exe` 同目录的 `tesseract.exe` |
-| ⑤ | `C:\Program Files\Tesseract-OCR\tesseract.exe` | 系统默认安装路径 |
-| ⑥ | `C:\Program Files (x86)\Tesseract-OCR\tesseract.exe` | 32 位备选路径 |
+| ① | `--tesseract-path` 参数 | 用户显式指定绝对路径 |
+| ② | `TESSERACT_PATH` 环境变量 | 全局环境变量指定路径 |
+| ③ | `C:\Program Files\Tesseract-OCR\tesseract.exe` | Windows 64 位默认安装路径 |
+| ④ | `C:\Program Files (x86)\Tesseract-OCR\tesseract.exe` | Windows 32 位备选路径 |
+| ⑤ | 系统 PATH 环境变量 (`which tesseract`) | Linux / macOS / Windows 系统 PATH |
 
 自动设置 `TESSDATA_PREFIX` 环境变量指向 `tessdata/` 目录（如果该目录存在于 Tesseract 同目录下）。
 

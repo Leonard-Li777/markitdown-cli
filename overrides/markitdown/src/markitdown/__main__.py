@@ -1,3 +1,4 @@
+import shutil
 import argparse
 import os
 import sys
@@ -595,6 +596,7 @@ def main():
 
     if args.use_ocr:
         route_kwargs["ocr_engine"] = args.ocr_engine
+        route_kwargs["ocr_model_size"] = getattr(args, "ocr_model_size", None)
         if args.ocr_engine == "tesseract":
             if args.tesseract_path:
                 route_kwargs["tesseract_path"] = args.tesseract_path
@@ -621,14 +623,52 @@ def main():
             if val:
                 output_paths[ind] = val
 
+        # Auto-detect exiftool path
+        exiftool_path = None
+        meipass = getattr(sys, "_MEIPASS", None)
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        candidates = []
+        if meipass:
+            candidates.extend([
+                os.path.join(meipass, "exiftool", "exiftool.exe"),
+                os.path.join(meipass, "exiftool", "exiftool"),
+                os.path.join(meipass, "exiftool.exe"),
+                os.path.join(meipass, "exiftool"),
+            ])
+        candidates.extend([
+            os.path.join(exe_dir, "exiftool", "exiftool.exe"),
+            os.path.join(exe_dir, "exiftool", "exiftool"),
+            os.path.join(exe_dir, "exiftool.exe"),
+            os.path.join(exe_dir, "exiftool"),
+            "C:\\Program Files\\exiftool\\exiftool.exe",
+        ])
+        for c in candidates:
+            if os.path.isfile(c):
+                exiftool_path = os.path.abspath(c)
+                break
+
+        if exiftool_path is None:
+            env_path = os.environ.get("EXIFTOOL_PATH")
+            if env_path and os.path.isfile(env_path):
+                exiftool_path = env_path
+        if exiftool_path is None:
+            found = shutil.which("exiftool")
+            if found:
+                exiftool_path = os.path.abspath(found)
+
         ocr_lang = getattr(args, "tesseract_lang", "eng+chi_sim")
+        ocr_engine = getattr(args, "ocr_engine", "paddleocr")
+        ocr_model_size = getattr(args, "ocr_model_size", None)
         result_json = extract_to_json(
             file_path=file_path,
             file_bytes=file_bytes,
             extract_list=extract_list,
             pages_spec_str=args.pages,
+            ocr_engine=ocr_engine,
             ocr_lang=ocr_lang,
+            ocr_model_size=ocr_model_size,
             thumbnail_format="png",
+            exiftool_path=exiftool_path,
             output_paths=output_paths,
         )
 

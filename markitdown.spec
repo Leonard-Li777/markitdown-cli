@@ -114,7 +114,7 @@ _mark("datas collection done")
 # Onedir:  tools are at dist/markitdown/tesseract/ (inside COLLECT dir)
 _repo = Path(SPECPATH) if 'SPECPATH' in dir() else Path.cwd()
 
-for _name in ("tesseract", "exiftool"):
+for _name in ("exiftool",):
     _candidates = [
         _repo / "dist" / _name,                # onefile
         _repo / "dist" / "markitdown" / _name, # onedir

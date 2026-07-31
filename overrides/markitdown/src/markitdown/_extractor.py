@@ -95,6 +95,38 @@ def extract_metadata(file_path: str, file_bytes: bytes, **kwargs) -> dict:
     # Enrich with exiftool metadata (all keys, no filtering)
     try:
         exiftool_path = kwargs.get("exiftool_path")
+        if not exiftool_path:
+            import shutil, sys
+            meipass = getattr(sys, "_MEIPASS", None)
+            exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+            candidates = []
+            if meipass:
+                candidates.extend([
+                    os.path.join(meipass, "exiftool", "exiftool.exe"),
+                    os.path.join(meipass, "exiftool", "exiftool"),
+                    os.path.join(meipass, "exiftool.exe"),
+                    os.path.join(meipass, "exiftool"),
+                ])
+            candidates.extend([
+                os.path.join(exe_dir, "exiftool", "exiftool.exe"),
+                os.path.join(exe_dir, "exiftool", "exiftool"),
+                os.path.join(exe_dir, "exiftool.exe"),
+                os.path.join(exe_dir, "exiftool"),
+                "C:\\Program Files\\exiftool\\exiftool.exe",
+            ])
+            for c in candidates:
+                if os.path.isfile(c):
+                    exiftool_path = os.path.abspath(c)
+                    break
+            if not exiftool_path:
+                env_p = os.environ.get("EXIFTOOL_PATH")
+                if env_p and os.path.isfile(env_p):
+                    exiftool_path = env_p
+            if not exiftool_path:
+                found = shutil.which("exiftool")
+                if found:
+                    exiftool_path = os.path.abspath(found)
+
         if exiftool_path:
             from .converters._exiftool import exiftool_metadata
             raw = exiftool_metadata(file_bytes, exiftool_path=exiftool_path, file_path=file_path)
@@ -623,10 +655,12 @@ def run_extraction(
                 result_data[name] = value
 
     # Assemble response
-    if magika_data:
+    if magika_data is not None:
         results["magika"] = magika_data
-    if meta_data:
+    if meta_data is not None:
         results["metadata"] = meta_data
+    if thumb_data is not None:
+        results["thumbnail"] = thumb_data
     if result_data:
         res = {}
         for name, content in result_data.items():

@@ -747,8 +747,8 @@ def main():
         help="Build directory bundle instead of single-file executable",
     )
     parser.add_argument(
-        "--skip-tesseract", action="store_true",
-        help="Skip downloading/bundling Tesseract",
+        "--skip-tesseract", action="store_true", default=True,
+        help="Skip downloading/bundling Tesseract (Tesseract is not bundled by default)",
     )
     parser.add_argument(
         "--skip-deps", action="store_true",
