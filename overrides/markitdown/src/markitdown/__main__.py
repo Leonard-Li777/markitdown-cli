@@ -183,7 +183,9 @@ def _server_command():
                         help="Host to bind to (default 127.0.0.1)")
     parser.add_argument("--port-file", type=str, default=None,
                         help="Write the actual port number to this file")
-    args = parser.parse_args(sys.argv[2:])
+    
+    argv_to_parse = [a for a in sys.argv[2:] if a != "--server"]
+    args = parser.parse_args(argv_to_parse)
 
     from ._server import run_server
     run_server(host=args.host, port=args.port, port_file=args.port_file)
@@ -202,7 +204,9 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1] == "pdf":
         _pdf_command()
         return
-    if len(sys.argv) > 1 and sys.argv[1] == "server":
+    if len(sys.argv) > 1 and (sys.argv[1] == "server" or "--port" in sys.argv or "--server" in sys.argv or sys.argv[1] == "--server"):
+        if sys.argv[1] != "server":
+            sys.argv.insert(1, "server")
         _server_command()
         return
 
