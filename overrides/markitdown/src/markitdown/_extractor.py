@@ -271,6 +271,50 @@ def extract_document(file_path: str, file_bytes: bytes, pages_spec_str: Optional
     )
 
 
+def _get_ocr_service(ocr_engine: str = "paddleocr", ocr_lang: str = "eng+chi_sim",
+                     ocr_model_size: Optional[str] = None, **kwargs):
+    if ocr_engine == "tesseract":
+        try:
+            from markitdown_ocr._tesseract_service import TesseractOCRService
+            svc = TesseractOCRService(
+                tesseract_path=kwargs.get("tesseract_path"),
+                lang=ocr_lang,
+            )
+            if svc.available:
+                return svc
+        except Exception:
+            pass
+        return None
+    elif ocr_engine == "llm":
+        if kwargs.get("llm_client") and kwargs.get("llm_model"):
+            try:
+                from markitdown_ocr._ocr_service import LLMVisionOCRService
+                return LLMVisionOCRService(client=kwargs["llm_client"], model=kwargs["llm_model"])
+            except Exception:
+                pass
+        return None
+    else:
+        # Default: paddleocr (ONNX PP-OCR) with fallback to tesseract
+        try:
+            from markitdown_ocr._onnx_ocr_service import ONNXPPOCRService
+            onnx_svc = ONNXPPOCRService(model_size=ocr_model_size)
+            if onnx_svc.available:
+                return onnx_svc
+        except Exception:
+            pass
+        try:
+            from markitdown_ocr._tesseract_service import TesseractOCRService
+            svc = TesseractOCRService(
+                tesseract_path=kwargs.get("tesseract_path"),
+                lang=ocr_lang,
+            )
+            if svc.available:
+                return svc
+        except Exception:
+            pass
+        return None
+
+
 def extract_ocr(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str] = None,
                 ocr_lang: str = "eng+chi_sim", **kwargs) -> str:
     """Extract text with OCR enabled."""
@@ -278,98 +322,39 @@ def extract_ocr(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str]
     ocr_model_size = kwargs.get("ocr_model_size")
 
     if "_pre_pdf" in kwargs:
-        extra = {"ocr_engine": ocr_engine, "tesseract_lang": ocr_lang}
-        extra.update({k: v for k, v in kwargs.items() if k in ("tesseract_path", "ocr_engine", "ocr_model_size")})
-        return route_document(
+        return extract_ocr(
             file_path=file_path,
             file_bytes=kwargs["_pre_pdf"],
-            extension=".pdf",
-            enable_ocr=True,
             pages_spec_str=pages_spec_str,
-            **extra,
+            ocr_lang=ocr_lang,
+            **{k: v for k, v in kwargs.items() if k != "_pre_pdf"},
         )
-    # Image files: OCR directly according to ocr_engine
+
     image_exts = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".tif", ".avif"}
     ext = os.path.splitext(file_path)[1].lower()
-    if ext in image_exts:
-        if ocr_engine == "tesseract":
-            try:
-                from markitdown_ocr._tesseract_service import TesseractOCRService
-                from PIL import Image as PILImage
-                import io
-                svc = TesseractOCRService(
-                    tesseract_path=kwargs.get("tesseract_path"),
-                    lang=ocr_lang,
-                )
-                if svc.available:
-                    img = PILImage.open(io.BytesIO(file_bytes))
-                    if img.mode not in ("L", "RGB"):
-                        img = img.convert("RGB")
-                    buf = io.BytesIO()
-                    img.save(buf, format="PNG")
-                    buf.seek(0)
-                    result = svc.extract_text(buf)
-                    return result.text or ""
-            except Exception:
-                pass
-            return ""
-        elif ocr_engine == "llm":
-            if kwargs.get("llm_client") and kwargs.get("llm_model"):
-                try:
-                    from markitdown_ocr._ocr_service import LLMVisionOCRService
-                    import io
-                    svc = LLMVisionOCRService(client=kwargs["llm_client"], model=kwargs["llm_model"])
-                    result = svc.extract_text(io.BytesIO(file_bytes))
-                    return result.text or ""
-                except Exception:
-                    pass
-            return ""
-        else:
-            # Default: paddleocr (ONNX PP-OCR)
-            try:
-                from markitdown_ocr._onnx_ocr_service import ONNXPPOCRService
-                onnx_svc = ONNXPPOCRService(model_size=ocr_model_size)
-                if onnx_svc.available:
-                    import io
-                    buf = io.BytesIO(file_bytes)
-                    result = onnx_svc.extract_text(buf)
-                    if result and result.text:
-                        return result.text
-            except Exception:
-                pass
 
+    if ext in image_exts:
+        svc = _get_ocr_service(ocr_engine, ocr_lang, ocr_model_size, **kwargs)
+        if svc:
             try:
-                from markitdown_ocr._tesseract_service import TesseractOCRService
-                from PIL import Image as PILImage
                 import io
-                svc = TesseractOCRService(
-                    tesseract_path=kwargs.get("tesseract_path"),
-                    lang=ocr_lang,
-                )
-                if svc.available:
-                    img = PILImage.open(io.BytesIO(file_bytes))
-                    if img.mode not in ("L", "RGB"):
-                        img = img.convert("RGB")
-                    buf = io.BytesIO()
-                    img.save(buf, format="PNG")
-                    buf.seek(0)
-                    result = svc.extract_text(buf)
-                    return result.text or ""
+                buf = io.BytesIO(file_bytes)
+                res = svc.extract_text(buf)
+                if res and res.text:
+                    return res.text
             except Exception:
                 pass
-            return ""
+        return ""
+
     if ext in {".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".odt", ".odp", ".ods"}:
         r_kwargs = {k: v for k, v in kwargs.items() if k not in ("enable_ocr", "pages_spec_str", "max_content_size_kb")}
         return route_document(file_path, file_bytes, ext, enable_ocr=True, pages_spec_str=pages_spec_str, **r_kwargs)
+
     if ext == ".pdf":
-        try:
-            from markitdown_ocr._tesseract_service import TesseractOCRService
-            import fitz
-            svc = TesseractOCRService(
-                tesseract_path=kwargs.get("tesseract_path"),
-                lang=ocr_lang,
-            )
-            if svc.available:
+        svc = _get_ocr_service(ocr_engine, ocr_lang, ocr_model_size, **kwargs)
+        if svc:
+            try:
+                import fitz
                 doc = fitz.open(stream=file_bytes, filetype="pdf")
                 total = doc.page_count
 
@@ -397,8 +382,10 @@ def extract_ocr(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str]
                             ocr_parts.append(f"--- Page {page_num} ---\n{res.text.strip()}")
                 doc.close()
                 return "\n\n".join(ocr_parts)
-        except Exception:
-            pass
+            except Exception:
+                pass
+        return ""
+
     return ""
 
 
