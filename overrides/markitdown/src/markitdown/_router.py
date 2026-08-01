@@ -30,13 +30,14 @@ def route_document(
                 # office_to_pdf automatically converts office using LibreOffice and filters pages if requested
                 pdf_bytes = office_to_pdf(file_path, pages_spec=pages_spec)
                 # Recursively route the generated PDF bytes (the pages are already filtered, so clear pages_spec_str)
+                r_kwargs = {k: v for k, v in kwargs.items() if k not in ("enable_ocr", "pages_spec_str")}
                 return route_document(
                     file_path=file_path,
                     file_bytes=pdf_bytes,
                     extension=".pdf",
                     enable_ocr=enable_ocr,
                     pages_spec_str=None,
-                    **kwargs
+                    **r_kwargs
                 )
             except Exception as e:
                 import warnings

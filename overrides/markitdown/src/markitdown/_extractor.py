@@ -157,13 +157,14 @@ def extract_text(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str
 
     # Try normal markitdown conversion first
     try:
+        r_kwargs = {k: v for k, v in kwargs.items() if k not in ("enable_ocr", "pages_spec_str")}
         result = route_document(
             file_path=file_path,
             file_bytes=file_bytes,
             extension=ext,
             enable_ocr=enable_ocr,
             pages_spec_str=pages_spec_str,
-            **kwargs
+            **r_kwargs
         )
         if result and result.strip():
             return result
@@ -258,13 +259,14 @@ def extract_document(file_path: str, file_bytes: bytes, pages_spec_str: Optional
             pass
 
     from ._router import route_document
+    r_kwargs = {k: v for k, v in kwargs.items() if k not in ("enable_ocr", "pages_spec_str")}
     return route_document(
         file_path=file_path,
         file_bytes=file_bytes,
         extension=ext,
         enable_ocr=enable_ocr,
         pages_spec_str=pages_spec_str,
-        **kwargs
+        **r_kwargs
     )
 
 
@@ -363,7 +365,8 @@ def extract_ocr(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str]
                 pass
             return ""
     if ext in {".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".odt", ".odp", ".ods"}:
-        return route_document(file_path, file_bytes, ext, enable_ocr=True, pages_spec_str=pages_spec_str, **kwargs)
+        r_kwargs = {k: v for k, v in kwargs.items() if k not in ("enable_ocr", "pages_spec_str")}
+        return route_document(file_path, file_bytes, ext, enable_ocr=True, pages_spec_str=pages_spec_str, **r_kwargs)
     if ext == ".pdf":
         # For PDF files, render pages as images and OCR with Tesseract.
         # Avoids the optional markitdown[pdf] dependency entirely.
