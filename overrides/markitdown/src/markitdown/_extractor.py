@@ -271,13 +271,19 @@ def extract_document(file_path: str, file_bytes: bytes, pages_spec_str: Optional
     )
 
 
-def _get_ocr_service(ocr_engine: str = "paddleocr", ocr_lang: str = "eng+chi_sim",
-                     ocr_model_size: Optional[str] = None, **kwargs):
+def _get_ocr_service(**kwargs):
+    ocr_engine = kwargs.get("ocr_engine", "paddleocr")
+    ocr_lang = kwargs.get("ocr_lang") or kwargs.get("tesseract_lang") or "eng+chi_sim"
+    ocr_model_size = kwargs.get("ocr_model_size")
+    tesseract_path = kwargs.get("tesseract_path")
+    llm_client = kwargs.get("llm_client")
+    llm_model = kwargs.get("llm_model")
+
     if ocr_engine == "tesseract":
         try:
             from markitdown_ocr._tesseract_service import TesseractOCRService
             svc = TesseractOCRService(
-                tesseract_path=kwargs.get("tesseract_path"),
+                tesseract_path=tesseract_path,
                 lang=ocr_lang,
             )
             if svc.available:
@@ -286,10 +292,10 @@ def _get_ocr_service(ocr_engine: str = "paddleocr", ocr_lang: str = "eng+chi_sim
             pass
         return None
     elif ocr_engine == "llm":
-        if kwargs.get("llm_client") and kwargs.get("llm_model"):
+        if llm_client and llm_model:
             try:
                 from markitdown_ocr._ocr_service import LLMVisionOCRService
-                return LLMVisionOCRService(client=kwargs["llm_client"], model=kwargs["llm_model"])
+                return LLMVisionOCRService(client=llm_client, model=llm_model)
             except Exception:
                 pass
         return None
@@ -305,7 +311,7 @@ def _get_ocr_service(ocr_engine: str = "paddleocr", ocr_lang: str = "eng+chi_sim
         try:
             from markitdown_ocr._tesseract_service import TesseractOCRService
             svc = TesseractOCRService(
-                tesseract_path=kwargs.get("tesseract_path"),
+                tesseract_path=tesseract_path,
                 lang=ocr_lang,
             )
             if svc.available:
@@ -318,23 +324,21 @@ def _get_ocr_service(ocr_engine: str = "paddleocr", ocr_lang: str = "eng+chi_sim
 def extract_ocr(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str] = None,
                 ocr_lang: str = "eng+chi_sim", **kwargs) -> str:
     """Extract text with OCR enabled."""
-    ocr_engine = kwargs.get("ocr_engine", "paddleocr")
-    ocr_model_size = kwargs.get("ocr_model_size")
+    kwargs["ocr_lang"] = ocr_lang
 
-    if "_pre_pdf" in kwargs:
-        return extract_ocr(
-            file_path=file_path,
-            file_bytes=kwargs["_pre_pdf"],
-            pages_spec_str=pages_spec_str,
-            ocr_lang=ocr_lang,
-            **{k: v for k, v in kwargs.items() if k != "_pre_pdf"},
-        )
+    # If Office file pre-converted to PDF bytes, use those PDF bytes directly
+    if "_pre_pdf" in kwargs and kwargs["_pre_pdf"]:
+        file_bytes = kwargs["_pre_pdf"]
+        ext = ".pdf"
+    else:
+        ext = os.path.splitext(file_path)[1].lower()
 
     image_exts = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".tif", ".avif"}
-    ext = os.path.splitext(file_path)[1].lower()
+    office_exts = {".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".odt", ".odp", ".ods"}
 
+    # 1. Image files: OCR directly
     if ext in image_exts:
-        svc = _get_ocr_service(ocr_engine, ocr_lang, ocr_model_size, **kwargs)
+        svc = _get_ocr_service(**kwargs)
         if svc:
             try:
                 import io
@@ -346,12 +350,20 @@ def extract_ocr(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str]
                 pass
         return ""
 
-    if ext in {".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".odt", ".odp", ".ods"}:
-        r_kwargs = {k: v for k, v in kwargs.items() if k not in ("enable_ocr", "pages_spec_str", "max_content_size_kb")}
-        return route_document(file_path, file_bytes, ext, enable_ocr=True, pages_spec_str=pages_spec_str, **r_kwargs)
+    # 2. Office files: convert to PDF first if not pre-converted
+    if ext in office_exts:
+        try:
+            from ._pdf_output import office_to_pdf
+            from ._page_range import parse_pages
+            pages_spec = parse_pages(pages_spec_str) if pages_spec_str else None
+            file_bytes = office_to_pdf(file_path, pages_spec=pages_spec)
+            ext = ".pdf"
+        except Exception:
+            return ""
 
+    # 3. PDF files (including converted Office files): render page-by-page and run OCR
     if ext == ".pdf":
-        svc = _get_ocr_service(ocr_engine, ocr_lang, ocr_model_size, **kwargs)
+        svc = _get_ocr_service(**kwargs)
         if svc:
             try:
                 import fitz
@@ -393,21 +405,40 @@ def extract_html(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str
                  **kwargs) -> str:
     """Extract HTML output using MarkItDown HTML converter."""
     from ._html_output import convert_to_html
-    return convert_to_html(
-        file_path=file_path,
-        file_bytes=file_bytes,
-        pages_spec_str=pages_spec_str,
-        **kwargs
-    )
+    ext = os.path.splitext(file_path)[1].lower()
+
+    r_kwargs = {k: v for k, v in kwargs.items() if k not in ("enable_ocr", "pages_spec_str", "max_content_size_kb")}
+    try:
+        md_text = route_document(file_path, file_bytes, ext, enable_ocr=False, pages_spec_str=pages_spec_str, **r_kwargs)
+    except Exception:
+        md_text = ""
+
+    if not md_text and file_bytes:
+        md_text = _extract_text_raw(file_bytes)
+
+    title = os.path.basename(file_path) if file_path else "MarkItDown Output"
+    return convert_to_html(md_text, title=title)
 
 
 def extract_thumbnail(file_path: str, file_bytes: bytes,
-                      fmt: str = "png", dpi: int = 150):
+                      fmt: str = "png", dpi: int = 150, **kwargs):
     """Extract first-page thumbnail as raw image bytes.
 
     Returns raw bytes on success, or a dict ``{"error": "..."}`` on failure.
     """
     try:
+        if "_pre_pdf" in kwargs and kwargs["_pre_pdf"]:
+            try:
+                import fitz
+                doc = fitz.open(stream=kwargs["_pre_pdf"], filetype="pdf")
+                if doc.page_count > 0:
+                    page = doc[0]
+                    pix = page.get_pixmap(dpi=dpi)
+                    img_bytes = pix.tobytes("png" if fmt not in ("png", "jpeg", "jpg", "webp") else fmt)
+                    doc.close()
+                    return img_bytes
+            except Exception:
+                pass
         images = extract_thumbnails(
             file_path=file_path,
             pages_spec="1",

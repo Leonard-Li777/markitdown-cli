@@ -25,8 +25,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </html>"""
 
 
-def convert_to_html(markdown_text: str, title: str = "MarkItDown Output") -> str:
-    text = markdown_text.lstrip("\ufeff")
+def convert_to_html(markdown_text: str = "", title: str = "MarkItDown Output", **kwargs) -> str:
+    if not markdown_text and kwargs.get("file_bytes"):
+        fb = kwargs["file_bytes"]
+        if fb:
+            try:
+                from ._extractor import _extract_text_raw
+                markdown_text = _extract_text_raw(fb)
+            except Exception:
+                markdown_text = ""
+    if kwargs.get("file_path") and title == "MarkItDown Output":
+        import os
+        title = os.path.basename(kwargs["file_path"])
+    text = (markdown_text or "").lstrip("\ufeff")
     body = _md_lib.markdown(text, extensions=["fenced_code", "tables", "codehilite", "sane_lists"])
     return HTML_TEMPLATE.format(title=_escape_html(title), content=body)
 
