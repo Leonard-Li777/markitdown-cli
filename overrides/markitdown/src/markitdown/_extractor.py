@@ -464,7 +464,7 @@ EXTRACTORS = {
     "document": lambda fp, fb, **kw: extract_document(fp, fb, **kw),
     "ocr":      lambda fp, fb, **kw: extract_ocr(fp, fb, **kw),
     "html":     lambda fp, fb, **kw: extract_html(fp, fb, **kw),
-    "thumbnail": lambda fp, fb, **kw: extract_thumbnail(fp, fb, fmt=kw.get("thumbnail_format", "png")),
+    "thumbnail": lambda fp, fb, **kw: extract_thumbnail(fp, fb, fmt=kw.get("thumbnail_format", "png"), **kw),
 }
 
 
@@ -599,6 +599,7 @@ def run_extraction(
     needs_lo = "ocr" in extract_list or "thumbnail" in extract_list or (pages_spec_str and "document" in extract_list)
     if ext in office_exts and needs_lo:
         t0_lo = time.time()
+        pre_pdf_error: Optional[str] = None
         try:
             from ._pdf_output import office_to_pdf
             pages_spec = None
@@ -613,8 +614,19 @@ def run_extraction(
                     if resolved is not None and len(resolved) < doc.page_count * 0.5:
                         pages_spec = resolved
             pre_pdf = office_to_pdf(file_path, pages_spec=pages_spec)
-        except Exception:
-            pass
+        except Exception as e:
+            # Do NOT swallow silently: if pre-conversion fails, each extractor
+            # falls back to converting on its own, and that time is charged to
+            # thumbnail/ocr/document instead of office_pre_pdf_ms. Surface the
+            # failure so the tiny office_pre_pdf_ms value is explainable.
+            pre_pdf_error = f"{type(e).__name__}: {e}"
+            import warnings
+            warnings.warn(
+                f"Office pre-conversion to PDF failed ({pre_pdf_error}); "
+                f"extractors will convert independently, so office_pre_pdf_ms "
+                f"reflects only the failed attempt.",
+                RuntimeWarning,
+            )
         benchmarks["office_pre_pdf_ms"] = int((time.time() - t0_lo) * 1000)
 
     # Helper function for timed execution
