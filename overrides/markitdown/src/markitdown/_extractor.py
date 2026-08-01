@@ -180,15 +180,14 @@ def extract_text(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str
     return _extract_text_raw(file_bytes)
 
 
-def _extract_text_raw(file_bytes: bytes) -> str:
-    """Raw plain-text extraction: 10KB limit + encoding detection via chardet.
+def _extract_text_raw(file_bytes: bytes, max_bytes: int = 30 * 1024) -> str:
+    """Raw plain-text extraction: configurable size limit + encoding detection via chardet.
 
     Used for ``file_group=="text"`` files — bypasses the MarkItDown pipeline
     and directly decodes the raw bytes with automatic encoding detection.
     """
-    MAX_TEXT_SIZE = 10 * 1024
-    if len(file_bytes) > MAX_TEXT_SIZE:
-        file_bytes = file_bytes[:MAX_TEXT_SIZE]
+    if len(file_bytes) > max_bytes:
+        file_bytes = file_bytes[:max_bytes]
     try:
         import chardet
         detection = chardet.detect(file_bytes)
@@ -259,7 +258,7 @@ def extract_document(file_path: str, file_bytes: bytes, pages_spec_str: Optional
             pass
 
     from ._router import route_document
-    r_kwargs = {k: v for k, v in kwargs.items() if k not in ("enable_ocr", "pages_spec_str")}
+    r_kwargs = {k: v for k, v in kwargs.items() if k not in ("enable_ocr", "pages_spec_str", "max_content_size_kb")}
     return route_document(
         file_path=file_path,
         file_bytes=file_bytes,
@@ -272,14 +271,7 @@ def extract_document(file_path: str, file_bytes: bytes, pages_spec_str: Optional
 
 def extract_ocr(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str] = None,
                 ocr_lang: str = "eng+chi_sim", **kwargs) -> str:
-    """Extract text with OCR enabled.
-
-    If ``_pre_pdf`` is provided, reuse it directly instead of going through
-    LibreOffice again. Routes via the full markitdown OCR pipeline
-    (PdfConverterWithOCR) which adds ``*[Image OCR]*`` markers, page headers,
-    and interleaves extracted text with OCR'd image text — producing output
-    distinct from extract_document's non-OCR pipeline.
-    """
+    """Extract text with OCR enabled."""
     ocr_engine = kwargs.get("ocr_engine", "paddleocr")
     ocr_model_size = kwargs.get("ocr_model_size")
 
@@ -365,11 +357,9 @@ def extract_ocr(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str]
                 pass
             return ""
     if ext in {".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".odt", ".odp", ".ods"}:
-        r_kwargs = {k: v for k, v in kwargs.items() if k not in ("enable_ocr", "pages_spec_str")}
+        r_kwargs = {k: v for k, v in kwargs.items() if k not in ("enable_ocr", "pages_spec_str", "max_content_size_kb")}
         return route_document(file_path, file_bytes, ext, enable_ocr=True, pages_spec_str=pages_spec_str, **r_kwargs)
     if ext == ".pdf":
-        # For PDF files, render pages as images and OCR with Tesseract.
-        # Avoids the optional markitdown[pdf] dependency entirely.
         try:
             from markitdown_ocr._tesseract_service import TesseractOCRService
             import fitz
@@ -377,58 +367,42 @@ def extract_ocr(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str]
                 tesseract_path=kwargs.get("tesseract_path"),
                 lang=ocr_lang,
             )
-            if not svc.available:
-                import warnings
-                warnings.warn(f"[OCR] Tesseract not available (cmd={getattr(svc, '_tesseract_cmd', '?')})", RuntimeWarning)
-                return ""
-            doc = fitz.open(stream=file_bytes, filetype="pdf")
-            total = doc.page_count
+            if svc.available:
+                doc = fitz.open(stream=file_bytes, filetype="pdf")
+                total = doc.page_count
 
-            # Resolve page range
-            if pages_spec_str:
-                from ._page_range import parse_pages, resolve
-                spec = parse_pages(pages_spec_str)
-                pages = resolve(spec, total) if spec else None
-            else:
-                pages = None
-            if pages is None:
-                pages = list(range(1, total + 1))
-            else:
-                pages = sorted(list(pages))
+                if pages_spec_str:
+                    from ._page_range import parse_pages, resolve
+                    spec = parse_pages(pages_spec_str)
+                    pages = resolve(spec, total) if spec else None
+                else:
+                    pages = None
 
-            parts = []
-            for p in pages:
-                if 1 <= p <= total:
-                    page = doc[p - 1]
-                    # Render page to image at 300 DPI for OCR quality
-                    pix = page.get_pixmap(dpi=300)
-                    img_bytes = pix.tobytes("png")
-                    import io
-                    from PIL import Image as PILImage
-                    img = PILImage.open(io.BytesIO(img_bytes))
-                    buf = io.BytesIO()
-                    img.save(buf, format="PNG")
-                    buf.seek(0)
-                    result = svc.extract_text(buf)
-                    if result.error:
-                        import warnings
-                        warnings.warn(f"[OCR] Tesseract error on page {p}: {result.error}", RuntimeWarning)
-                    text = result.text or ""
-                    if text.strip():
-                        parts.append(text.strip())
-            doc.close()
-            return "\n\n".join(parts)
-        except ImportError:
-            # TesseractOCRService or fitz not available
-            return ""
-    kwargs["ocr_engine"] = "tesseract"
-    kwargs["tesseract_lang"] = ocr_lang
-    return extract_text(file_path, file_bytes, pages_spec_str, enable_ocr=True, **kwargs)
+                if pages is None:
+                    pages = list(range(1, total + 1))
+                else:
+                    pages = sorted(list(pages))
+
+                ocr_parts = []
+                for page_num in pages:
+                    if 1 <= page_num <= total:
+                        page = doc[page_num - 1]
+                        pix = page.get_pixmap(dpi=150)
+                        import io
+                        buf = io.BytesIO(pix.tobytes("png"))
+                        res = svc.extract_text(buf)
+                        if res and res.text and res.text.strip():
+                            ocr_parts.append(f"--- Page {page_num} ---\n{res.text.strip()}")
+                doc.close()
+                return "\n\n".join(ocr_parts)
+        except Exception:
+            pass
+    return ""
 
 
 def extract_html(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str] = None,
                  **kwargs) -> str:
-    """Extract HTML from document."""
+    """Extract HTML output using MarkItDown HTML converter."""
     from ._html_output import convert_to_html
     return convert_to_html(
         file_path=file_path,
@@ -496,12 +470,14 @@ def run_extraction(
     enable_ocr: bool = False,
     thumbnail_format: str = "png",
     exiftool_path: Optional[str] = None,
+    max_content_size_kb: int = 30,
     max_workers: int = 4,
 ) -> dict:
     """
     Run multiple extractors in parallel and return a combined result dict.
     """
     t_start = time.time()
+    benchmarks: dict[str, int] = {}
     ext = os.path.splitext(file_path)[1].lower()
     results: dict[str, Any] = {
         "status": "ok",
@@ -532,6 +508,7 @@ def run_extraction(
         "ocr_model_size": ocr_model_size,
         "enable_ocr": is_ocr_enabled,
         "thumbnail_format": thumbnail_format,
+        "max_content_size_kb": max_content_size_kb,
     }
     if exiftool_path:
         kwargs["exiftool_path"] = exiftool_path
@@ -598,13 +575,10 @@ def run_extraction(
 
     # Optimisation: when OCR, thumbnail, or document with page range selection is requested on an Office file,
     # pre-convert to PDF once and reuse for OCR, document (text extraction via PDF), and thumbnail (first-page render).
-    # Without these, native extraction is used for all indicators — no LibreOffice needed, full content is returned
-    # regardless of --pages (native converters don't support page selection).
-    ext = os.path.splitext(file_path)[1].lower()
-    office_exts = {".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".odt", ".odp", ".ods"}
     pre_pdf: bytes | None = None
     needs_lo = "ocr" in extract_list or "thumbnail" in extract_list or (pages_spec_str and "document" in extract_list)
     if ext in office_exts and needs_lo:
+        t0_lo = time.time()
         try:
             from ._pdf_output import office_to_pdf
             pages_spec = None
@@ -621,21 +595,29 @@ def run_extraction(
             pre_pdf = office_to_pdf(file_path, pages_spec=pages_spec)
         except Exception:
             pass
+        benchmarks["office_pre_pdf_ms"] = int((time.time() - t0_lo) * 1000)
+
+    # Helper function for timed execution
+    def _timed_worker(fn, fp, fb, kw):
+        t0 = time.time()
+        res = fn(fp, fb, **kw)
+        dt = int((time.time() - t0) * 1000)
+        return res, dt
 
     # Parallel execution
     if pre_pdf is not None:
         kwargs["_pre_pdf"] = pre_pdf
+    max_bytes = max_content_size_kb * 1024
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         future_map = {}
         for name in filtered_extract:
             # For text files (file_group == "text"), use raw text extraction
-            # which bypasses the markitdown pipeline — just 1MB + chardet.
             if name == "text" and file_group == "text":
-                extract_fn = lambda fp, fb, **kw: _extract_text_raw(fb)
+                extract_fn = lambda fp, fb, **kw: _extract_text_raw(fb, max_bytes=max_bytes)
             else:
                 extract_fn = EXTRACTORS.get(name)
             if extract_fn:
-                future = pool.submit(extract_fn, file_path, file_bytes, **kwargs)
+                future = pool.submit(_timed_worker, extract_fn, file_path, file_bytes, kwargs)
                 future_map[future] = name
 
         # Collect results
@@ -647,9 +629,11 @@ def run_extraction(
         for future in as_completed(future_map):
             name = future_map[future]
             try:
-                value = future.result()
+                value, elapsed_ms = future.result()
+                benchmarks[f"{name}_ms"] = elapsed_ms
             except Exception as e:
                 value = {"error": f"Thread '{name}': {type(e).__name__}: {e}"}
+                benchmarks[f"{name}_ms"] = 0
 
             if name == "magika":
                 magika_data = value
@@ -669,11 +653,18 @@ def run_extraction(
         results["thumbnail"] = thumb_data
     if result_data:
         res = {}
-        for name, content in result_data.items():
-            if isinstance(content, str):
-                res[name] = {"content": content, "length": len(content)}
+        for name, val in result_data.items():
+            if isinstance(val, str):
+                text_str = val[:max_bytes] if len(val) > max_bytes else val
+                res[name] = {"content": text_str, "length": len(text_str)}
+            elif isinstance(val, dict):
+                content = val.get("content")
+                if isinstance(content, str) and len(content) > max_bytes:
+                    val["content"] = content[:max_bytes]
+                    val["length"] = len(val["content"])
+                res[name] = val
             else:
-                res[name] = content
+                res[name] = val
         if pages_spec_str:
             try:
                 from ._page_range import parse_pages, resolve
@@ -692,17 +683,19 @@ def run_extraction(
                 pass
         results["result"] = res
 
-    if thumb_data:
-        if isinstance(thumb_data, bytes):
-            results["thumbnail"] = {
-                "format": thumbnail_format,
-                "dpi": 150,
-                "data": base64.b64encode(thumb_data).decode("ascii"),
-            }
-        elif isinstance(thumb_data, dict):
-            results["thumbnail"] = thumb_data
+    if thumb_data and isinstance(thumb_data, bytes):
+        results["thumbnail"] = {
+            "format": thumbnail_format,
+            "dpi": 150,
+            "data": base64.b64encode(thumb_data).decode("ascii"),
+        }
 
-    results["time_ms"] = int((time.time() - t_start) * 1000)
+    total_ms = int((time.time() - t_start) * 1000)
+    results["time_ms"] = total_ms
+    results["benchmark"] = {
+        "total_ms": total_ms,
+        **benchmarks,
+    }
     return results
 
 
@@ -718,6 +711,7 @@ def extract_to_json(
     thumbnail_format: str = "png",
     exiftool_path: Optional[str] = None,
     output_paths: Optional[dict[str, str]] = None,
+    max_content_size_kb: int = 30,
     max_workers: int = 4,
 ) -> dict:
     """
@@ -736,6 +730,7 @@ def extract_to_json(
         enable_ocr=enable_ocr,
         thumbnail_format=thumbnail_format,
         exiftool_path=exiftool_path,
+        max_content_size_kb=max_content_size_kb,
         max_workers=max_workers,
     )
 

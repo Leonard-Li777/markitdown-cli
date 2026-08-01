@@ -402,6 +402,13 @@ def main():
         help="Comma-separated indicators to extract: text,document,ocr,html,metadata,magika,thumbnail. "
         "When multiple indicators are specified, output is JSON.",
     )
+    extract_group.add_argument(
+        "--max-content-size-kb",
+        "--max-size-kb",
+        type=int,
+        default=30,
+        help="Max extracted text/document/ocr content size in KB per indicator (default: 30 KB).",
+    )
     for _ind in ("text", "document", "ocr", "html", "metadata", "magika", "thumbnail"):
         extract_group.add_argument(
             f"--{_ind}-out",
@@ -663,6 +670,7 @@ def main():
         ocr_lang = getattr(args, "tesseract_lang", "eng+chi_sim")
         ocr_engine = getattr(args, "ocr_engine", "paddleocr")
         ocr_model_size = getattr(args, "ocr_model_size", None)
+        max_content_size_kb = getattr(args, "max_content_size_kb", 30)
         result_json = extract_to_json(
             file_path=file_path,
             file_bytes=file_bytes,
@@ -674,6 +682,7 @@ def main():
             thumbnail_format="png",
             exiftool_path=exiftool_path,
             output_paths=output_paths,
+            max_content_size_kb=max_content_size_kb,
         )
 
         import json

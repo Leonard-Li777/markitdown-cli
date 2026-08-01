@@ -415,6 +415,7 @@ Content-Type: application/json
 | `file` | file | ✅ | 上传文件（multipart 模式） |
 | `extract` | string/array | ✅ | 逗号分隔或数组：`text,document,ocr,html,metadata,magika,thumbnail` |
 | `pages` | string | 否 | 页码（仅影响 text/document/ocr/html） |
+| `max_content_size_kb` | integer | 否 | 单个文本指标 (`text`/`document`/`ocr`/`html`) 最大提取限制，单位 KB（1 KB = 1024 字符，默认 `30` KB）。超长自动截断，`length` 同步更新。（别名：`max_size_kb`, `max_text_size_kb`） |
 | `ocr_model_size` | string | 否 | ONNX PP-OCR 模型规格：`"small"` (默认) / `"tiny"` / `"medium"`（别名 `ocr_size`） |
 | `ocr_lang` | string | 否 | 默认 `"eng+chi_sim"` |
 | `thumbnail_format` | string | 否 | `"png"` / `"jpg"` / `"webp"`，默认 `"png"` |
@@ -426,12 +427,21 @@ Content-Type: application/json
 | `metadata_out` | string | 否 | 元数据 JSON 写出路径 |
 | `magika_out` | string | 否 | magika 结果 JSON 写出路径 |
 
-**Response**：
+**Response 结构与字段说明**：
 
 ```json
 {
   "status": "ok",
   "time_ms": 1234,
+  "benchmark": {
+    "total_ms": 1234,
+    "office_pre_pdf_ms": 63,
+    "magika_ms": 3,
+    "metadata_ms": 45,
+    "document_ms": 320,
+    "ocr_ms": 1180,
+    "thumbnail_ms": 210
+  },
   "file": {
     "name": "document.pdf",
     "size": 1048576,
@@ -455,17 +465,56 @@ Content-Type: application/json
     "modified": "2026-07-01T08:00:00"
   },
   "result": {
-    "text": { "content": "## Page 1\n\n正文...", "length": 1234 },
-    "ocr":  { "content": "OCR结果...", "length": 567 },
-    "html": { "content": "<h1>Page 1</h1><p>...</p>", "length": 2000 },
+    "text":     { "content": "## Page 1\n\n正文...", "length": 1234, "path": null },
+    "document": { "content": "## 文档正文...", "length": 5678, "path": null },
+    "ocr":      { "content": "OCR结果...", "length": 567, "path": null },
+    "html":     { "content": "<h1>Page 1</h1><p>...</p>", "length": 2000, "path": null },
     "pages_processed": 3
   },
   "thumbnail": {
-    "format": "png", "dpi": 150,
-    "data": "iVBORw0KGgo..."
+    "format": "png", 
+    "dpi": 150,
+    "data": "iVBORw0KGgo...",
+    "path": null
   }
 }
 ```
+
+### 响应字段详细说明
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `status` | string | 请求处理状态：`"ok"`（成功）或 `"error"`（失败） |
+| `time_ms` | integer | **总耗时（毫秒）**：从接收请求/开始执行提取到全部结果汇总返回的真实墙上时间（Wall-clock time） |
+| `benchmark` | object | **详细耗时埋点统计字典（毫秒）**：记录各个独立提取指标及预处理阶段的细分耗时 |
+| `benchmark.total_ms` | integer | 总耗时（与 `time_ms` 一致） |
+| `benchmark.office_pre_pdf_ms` | integer | Office 文档统一预转 PDF 阶段耗时（仅当请求包含 OCR/thumbnail 或选页 document 且输入为 Office 文件时存在） |
+| `benchmark.magika_ms` | integer | Magika 文件类型识别耗时 |
+| `benchmark.metadata_ms` | integer | ExifTool 及基础元数据提取耗时 |
+| `benchmark.text_ms` | integer | 纯文本提取耗时 |
+| `benchmark.document_ms` | integer | 文档 Markdown 转换耗时 |
+| `benchmark.ocr_ms` | integer | ONNX PP-OCR / Tesseract 图像字符识别耗时 |
+| `benchmark.html_ms` | integer | HTML 转换耗时 |
+| `benchmark.thumbnail_ms` | integer | 封面/预览缩略图渲染提取耗时 |
+| `file` | object | 输入文件的基本属性 |
+| `file.name` | string | 文件名 |
+| `file.size` | integer | 文件物理体积（字节 Bytes） |
+| `file.pages` | integer | 文档总页数（PDF/Office 文件支持） |
+| `extract` | array | 实际参与并行处理的指标列表（过滤掉了当前文件类型不适用的指标） |
+| `pages` | string | 请求传入的页码筛选范围规格（如 `"1-3"`，未传入时为 `null`） |
+| `magika` | object | Magika AI 文件类型检测结果（包含类型标签、MIME 类型、分组、判定置信度等） |
+| `metadata` | object | 文件元数据字典（ExifTool 信息、创建/修改时间、页数、标题等） |
+| `result` | object | 转换与提取的文本类结果集合 |
+| `result.<indicator>` | object | 提取的具体文本指标对象 (`text` / `document` / `ocr` / `html`) |
+| `result.<indicator>.content` | string/null | 提取的文本字符串。受 `max_content_size_kb` 限制自动截断。若指定了 `--<indicator>-out` 写出到文件，则此字段为 `null` |
+| `result.<indicator>.length` | integer | 内容实际字符数（截断后的实际长度） |
+| `result.<indicator>.path` | string/null | 文本导出的文件路径（若未写出到文件，则为 `null`） |
+| `result.pages_processed` | integer | 实际筛选处理的页数 |
+| `thumbnail` | object | 封面/缩略图提取结果对象 |
+| `thumbnail.format` | string | 缩略图图片格式（如 `"png"`） |
+| `thumbnail.dpi` | integer | 渲染 DPI 分辨率（默认 150） |
+| `thumbnail.data` | string/null | 图片 Base64 编码字符串（若指定了 `thumbnail_out` 写出到文件，则此字段为 `null`） |
+| `thumbnail.path` | string/null | 缩略图导出的文件路径（若未写出到文件，则为 `null`） |
 
 #### `GET /extract/:file_id`（大文件异步轮询）
 
@@ -480,6 +529,13 @@ Content-Type: application/json
 {
   "status": "ok",
   "time_ms": 1234,
+  "benchmark": {
+    "total_ms": 1234,
+    "magika_ms": 3,
+    "metadata_ms": 45,
+    "document_ms": 320,
+    "ocr_ms": 1180
+  },
   "file": {
     "name": "document.pdf",
     "size": 1048576,

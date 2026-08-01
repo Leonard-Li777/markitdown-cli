@@ -144,6 +144,12 @@ class _Handler(BaseHTTPRequestHandler):
             metadata_out = body.get("metadata_out")
             magika_out = body.get("magika_out")
 
+            max_content_size_kb = body.get("max_content_size_kb") or body.get("max_size_kb") or body.get("max_text_size_kb") or body.get("max_length_kb") or 30
+            try:
+                max_content_size_kb = int(max_content_size_kb)
+            except (ValueError, TypeError):
+                max_content_size_kb = 30
+
             enable_ocr = body.get("enable_ocr") or body.get("use_ocr")
             if isinstance(enable_ocr, str):
                 enable_ocr = enable_ocr.lower() in ("true", "1", "yes")
@@ -193,6 +199,11 @@ class _Handler(BaseHTTPRequestHandler):
             html_out = fields.get("html_out")
             metadata_out = fields.get("metadata_out")
             magika_out = fields.get("magika_out")
+            max_content_size_kb = fields.get("max_content_size_kb") or fields.get("max_size_kb") or fields.get("max_text_size_kb") or 30
+            try:
+                max_content_size_kb = int(max_content_size_kb)
+            except (ValueError, TypeError):
+                max_content_size_kb = 30
 
             if not file_data:
                 self._send_error(400, "No file uploaded")
@@ -280,6 +291,7 @@ class _Handler(BaseHTTPRequestHandler):
                 thumbnail_format=thumb_fmt,
                 exiftool_path=exiftool_path,
                 output_paths=output_paths if output_paths else None,
+                max_content_size_kb=max_content_size_kb,
             )
             result["file"]["name"] = file_name
             self._send_json(result)
