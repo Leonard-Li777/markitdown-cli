@@ -609,9 +609,10 @@ def run_extraction(
                 if spec:
                     import fitz
                     doc = fitz.open(stream=file_bytes, filetype=ext.strip(".") if ext != ".pdf" else "pdf")
-                    resolved = resolve(spec, doc.page_count)
+                    total_pages = doc.page_count
+                    resolved = resolve(spec, total_pages)
                     doc.close()
-                    if resolved is not None and len(resolved) < doc.page_count * 0.5:
+                    if resolved is not None and len(resolved) < total_pages * 0.5:
                         pages_spec = resolved
             pre_pdf = office_to_pdf(file_path, pages_spec=pages_spec)
         except Exception as e:
