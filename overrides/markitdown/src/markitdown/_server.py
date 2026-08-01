@@ -144,10 +144,20 @@ class _Handler(BaseHTTPRequestHandler):
             metadata_out = body.get("metadata_out")
             magika_out = body.get("magika_out")
 
-            max_content_size_kb = body.get("max_content_size_kb") or body.get("max_size_kb") or body.get("max_text_size_kb") or body.get("max_length_kb") or 30
-            try:
-                max_content_size_kb = int(max_content_size_kb)
-            except (ValueError, TypeError):
+            raw_max_size = body.get("max_content_size_kb")
+            if raw_max_size is None:
+                raw_max_size = body.get("max_size_kb")
+            if raw_max_size is None:
+                raw_max_size = body.get("max_text_size_kb")
+            if raw_max_size is None:
+                raw_max_size = body.get("max_length_kb")
+
+            if raw_max_size is not None:
+                try:
+                    max_content_size_kb = int(raw_max_size)
+                except (ValueError, TypeError):
+                    max_content_size_kb = 30
+            else:
                 max_content_size_kb = 30
 
             enable_ocr = body.get("enable_ocr") or body.get("use_ocr")
@@ -199,10 +209,18 @@ class _Handler(BaseHTTPRequestHandler):
             html_out = fields.get("html_out")
             metadata_out = fields.get("metadata_out")
             magika_out = fields.get("magika_out")
-            max_content_size_kb = fields.get("max_content_size_kb") or fields.get("max_size_kb") or fields.get("max_text_size_kb") or 30
-            try:
-                max_content_size_kb = int(max_content_size_kb)
-            except (ValueError, TypeError):
+            raw_max_size = fields.get("max_content_size_kb")
+            if raw_max_size is None:
+                raw_max_size = fields.get("max_size_kb")
+            if raw_max_size is None:
+                raw_max_size = fields.get("max_text_size_kb")
+
+            if raw_max_size is not None:
+                try:
+                    max_content_size_kb = int(raw_max_size)
+                except (ValueError, TypeError):
+                    max_content_size_kb = 30
+            else:
                 max_content_size_kb = 30
 
             if not file_data:

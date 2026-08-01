@@ -415,7 +415,7 @@ Content-Type: application/json
 | `file` | file | ✅ | 上传文件（multipart 模式） |
 | `extract` | string/array | ✅ | 逗号分隔或数组：`text,document,ocr,html,metadata,magika,thumbnail` |
 | `pages` | string | 否 | 页码（仅影响 text/document/ocr/html） |
-| `max_content_size_kb` | integer | 否 | 单个文本指标 (`text`/`document`/`ocr`/`html`) 最大提取限制，单位 KB（1 KB = 1024 字符，默认 `30` KB）。超长自动截断，`length` 同步更新。（别名：`max_size_kb`, `max_text_size_kb`） |
+| `max_content_size_kb` | integer | 否 | 单个文本指标 (`text`/`document`/`ocr`/`html`) 最大提取限制，单位 KB（1 KB = 1024 字符，默认 `30` KB）。超长自动截断，`length` 同步更新。**传入 `0` 或小于 `0`（如 `-1`）代表不限长度**。（别名：`max_size_kb`, `max_text_size_kb`） |
 | `ocr_model_size` | string | 否 | ONNX PP-OCR 模型规格：`"small"` (默认) / `"tiny"` / `"medium"`（别名 `ocr_size`） |
 | `ocr_lang` | string | 否 | 默认 `"eng+chi_sim"` |
 | `thumbnail_format` | string | 否 | `"png"` / `"jpg"` / `"webp"`，默认 `"png"` |

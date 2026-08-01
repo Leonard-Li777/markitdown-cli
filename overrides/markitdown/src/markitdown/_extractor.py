@@ -180,13 +180,15 @@ def extract_text(file_path: str, file_bytes: bytes, pages_spec_str: Optional[str
     return _extract_text_raw(file_bytes)
 
 
-def _extract_text_raw(file_bytes: bytes, max_bytes: int = 30 * 1024) -> str:
+def _extract_text_raw(file_bytes: bytes, max_bytes: int | None = 30 * 1024) -> str:
     """Raw plain-text extraction: configurable size limit + encoding detection via chardet.
 
     Used for ``file_group=="text"`` files — bypasses the MarkItDown pipeline
     and directly decodes the raw bytes with automatic encoding detection.
+
+    ``max_bytes=None``（或 ``<= 0``）表示不限制大小。
     """
-    if len(file_bytes) > max_bytes:
+    if max_bytes is not None and len(file_bytes) > max_bytes:
         file_bytes = file_bytes[:max_bytes]
     try:
         import chardet
@@ -607,7 +609,7 @@ def run_extraction(
     # Parallel execution
     if pre_pdf is not None:
         kwargs["_pre_pdf"] = pre_pdf
-    max_bytes = max_content_size_kb * 1024
+    max_bytes = None if max_content_size_kb <= 0 else max_content_size_kb * 1024
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         future_map = {}
         for name in filtered_extract:
@@ -655,11 +657,11 @@ def run_extraction(
         res = {}
         for name, val in result_data.items():
             if isinstance(val, str):
-                text_str = val[:max_bytes] if len(val) > max_bytes else val
+                text_str = val[:max_bytes] if (max_bytes is not None and len(val) > max_bytes) else val
                 res[name] = {"content": text_str, "length": len(text_str)}
             elif isinstance(val, dict):
                 content = val.get("content")
-                if isinstance(content, str) and len(content) > max_bytes:
+                if isinstance(content, str) and max_bytes is not None and len(content) > max_bytes:
                     val["content"] = content[:max_bytes]
                     val["length"] = len(val["content"])
                 res[name] = val
