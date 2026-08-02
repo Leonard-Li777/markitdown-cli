@@ -434,7 +434,16 @@ def extract_thumbnail(file_path: str, file_bytes: bytes,
                 if doc.page_count > 0:
                     page = doc[0]
                     pix = page.get_pixmap(dpi=dpi)
-                    img_bytes = pix.tobytes("png" if fmt not in ("png", "jpeg", "jpg", "webp") else fmt)
+                    if fmt == "webp":
+                        # PyMuPDF cannot export webp — convert via Pillow
+                        from PIL import Image
+                        import io
+                        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                        buf = io.BytesIO()
+                        img.save(buf, format="WEBP")
+                        img_bytes = buf.getvalue()
+                    else:
+                        img_bytes = pix.tobytes("png" if fmt not in ("png", "jpeg", "jpg", "webp") else fmt)
                     doc.close()
                     return img_bytes
             except Exception:
@@ -593,17 +602,23 @@ def run_extraction(
     filtered_extract = [i for i in extract_list if i not in skip_indicators]
     results["extract"] = filtered_extract  # report what was actually processed
 
-    # Optimisation: when OCR, thumbnail, or document with page range selection is requested on an Office file,
-    # pre-convert to PDF once and reuse for OCR, document (text extraction via PDF), and thumbnail (first-page render).
+    # Optimisation: pre-convert Office → PDF once and reuse for OCR, document,
+    # and thumbnail. Only OCR actually needs the rendered PDF (page rendering);
+    # thumbnail merely reuses pre_pdf when available and must NOT trigger the
+    # conversion itself. Without OCR, document extracts the text layer directly
+    # and the pages parameter has no effect — so the conversion is driven
+    # solely by OCR being enabled.
     pre_pdf: bytes | None = None
-    needs_lo = "ocr" in extract_list or "thumbnail" in extract_list or (pages_spec_str and "document" in extract_list)
+    needs_lo = is_ocr_enabled
     if ext in office_exts and needs_lo:
         t0_lo = time.time()
         pre_pdf_error: Optional[str] = None
-        try:
-            from ._pdf_output import office_to_pdf
-            pages_spec = None
-            if pages_spec_str:
+        # Page-range resolution is best-effort: fitz cannot open some legacy
+        # Office formats (binary .doc/.ppt/.xls), so a failure here must NOT
+        # abort the actual PDF conversion below — convert the full document.
+        pages_spec = None
+        if pages_spec_str:
+            try:
                 from ._page_range import parse_pages, resolve
                 spec = parse_pages(pages_spec_str)
                 if spec:
@@ -614,6 +629,11 @@ def run_extraction(
                     doc.close()
                     if resolved is not None and len(resolved) < total_pages * 0.5:
                         pages_spec = resolved
+            except Exception:
+                # fitz cannot inspect this format — fall back to full conversion
+                pages_spec = None
+        try:
+            from ._pdf_output import office_to_pdf
             pre_pdf = office_to_pdf(file_path, pages_spec=pages_spec)
         except Exception as e:
             # Do NOT swallow silently: if pre-conversion fails, each extractor
