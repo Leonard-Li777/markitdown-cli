@@ -58,7 +58,7 @@ python scripts/build.py --skip-overrides   # 跳过应用补丁
 - **PDF**：支持 `--pages` 选页，大文件自动按块处理（普通模式 50 页/块，OCR 模式 5 页/块）
 - **大 XLSX**（>20MB 且非 OCR）：`openpyxl(read_only=True)` 流式读取，避免 OOM
 - **Office 文件 + OCR**：经 LibreOffice / win32com 转为 PDF 后递归路由，`--pages` 在 PDF 阶段精确选页
-- **Office 文件 + 普通**：直接提取文本（PPTX 使用 python-pptx，DOCX 使用 mammoth/markitdown）
+- **Office 文件 + 普通**：直接提取文本（PPTX 使用 python-pptx，DOCX 使用 mammoth/markitdown），**不触发 Office → PDF 预转**，`--pages` 对 Office 普通模式不生效（分页参数仅在 PDF 或开启 OCR 时有效）
 
 ## 子命令
 
@@ -89,7 +89,7 @@ markitdown thumbnail document.pdf -o out.img --format webp
 markitdown thumbnail document.pdf -o preview.png --dpi 300
 ```
 
-**渲染优先级：**
+**渲染优先级（`thumbnail` 子命令 / 开启 OCR 的多指标提取）：**
 
 | 格式 | 首选 | 回退 1 | 回退 2 |
 |---|---|---|---|
@@ -97,6 +97,8 @@ markitdown thumbnail document.pdf -o preview.png --dpi 300
 | PPTX | win32com COM（Windows + Office） | LibreOffice → PDF → 渲染 | docProps/thumbnail.jpeg |
 | DOCX | LibreOffice → PDF → 渲染 | word/media/ 嵌入图 | — |
 | XLSX | LibreOffice → PDF → 渲染 | — | — |
+
+> **多指标提取（`--extract thumbnail`）时的行为**：若请求**未开启 OCR**，则 thumbnail 只尝试**内嵌缩略图 / win32com** 渲染，**禁用 LibreOffice 转换**（避免无谓耗时）——拿不到缩略图时快速失败并返回 `thumbnail.error`，不会触发 Office → PDF 转换；若请求**开启 OCR**，thumbnail 直接复用 OCR 预转的 PDF（`_pre_pdf`）渲染，耗时极低。
 
 ### 3. `markitdown html` — 转换为 HTML
 
@@ -153,6 +155,13 @@ markitdown pdf book.xlsx -o chapter.pdf --pages "5-10"
 | `1,3,5-7,10-12` | 混合 |
 | `-5` | 第 1~5 页 |
 | `5-` | 第 5 页至末尾 |
+
+### 分页参数传递规则
+
+`--pages` 按文件类型区分是否生效：
+
+- **PDF**：始终支持 `--pages` 选页（文本层与 OCR 模式均可精确分页）。
+- **Office 文件（docx/pptx/xlsx 等）**：仅在**开启 OCR** 时才支持 `--pages`——此时会先经 LibreOffice/win32com 预转 PDF 再按页处理；**未开启 OCR** 时直接提取文本层，`--pages` 不生效（传入也会被忽略），且**不会因传了 `thumbnail` 指标而触发 Office → PDF 预转**（thumbnail 仅在 OCR 预转存在时顺带复用其结果）。
 
 ## OCR 支持
 
@@ -274,7 +283,7 @@ markitdown document.pdf \
 | `html` | HTML 转换 | `--html-out FILE` | 内联 `result.html.content` |
 | `metadata` | 文件元数据 | `--metadata-out FILE` | 内联 `metadata` |
 | `magika` | magika 文件类型识别 | `--magika-out FILE` | 内联 `magika` |
-| `thumbnail` | 封面/预览图（**无需 `--pages`**） | `--thumbnail-out FILE` | base64 内联 `thumbnail.data` |
+| `thumbnail` | 封面/预览图（**无需 `--pages`**）。未开启 OCR 时仅走内嵌缩略图/win32com（**禁用 LibreOffice**，拿不到则返回 `thumbnail.error`）；开启 OCR 时复用预转 PDF 快速渲染 | `--thumbnail-out FILE` | base64 内联 `thumbnail.data` |
 
 ### 各指标输出路径控制
 
@@ -488,7 +497,7 @@ Content-Type: application/json
 | `time_ms` | integer | **总耗时（毫秒）**：从接收请求/开始执行提取到全部结果汇总返回的真实墙上时间（Wall-clock time） |
 | `benchmark` | object | **详细耗时埋点统计字典（毫秒）**：记录各个独立提取指标及预处理阶段的细分耗时 |
 | `benchmark.total_ms` | integer | 总耗时（与 `time_ms` 一致） |
-| `benchmark.office_pre_pdf_ms` | integer | Office 文档统一预转 PDF 阶段耗时（仅当请求包含 OCR/thumbnail 或选页 document 且输入为 Office 文件时存在） |
+| `benchmark.office_pre_pdf_ms` | integer | Office 文档统一预转 PDF 阶段耗时（**仅当开启 OCR 且输入为 Office 文件时存在**；无 OCR 时不预转，该字段不出现） |
 | `benchmark.magika_ms` | integer | Magika 文件类型识别耗时 |
 | `benchmark.metadata_ms` | integer | ExifTool 及基础元数据提取耗时 |
 | `benchmark.text_ms` | integer | 纯文本提取耗时 |
