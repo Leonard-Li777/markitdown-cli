@@ -35,7 +35,8 @@ def _normalize_fmt(fmt: str) -> str:
     return fmt
 
 
-def extract_thumbnails(file_path: str, pages_spec=None, dpi: int = 150, fmt: str = "png") -> dict[int, bytes]:
+def extract_thumbnails(file_path: str, pages_spec=None, dpi: int = 150, fmt: str = "png",
+                       allow_lo: bool = True) -> dict[int, bytes]:
     fmt = _normalize_fmt(fmt)
     ext = os.path.splitext(file_path)[1].lower()
 
@@ -68,6 +69,12 @@ def extract_thumbnails(file_path: str, pages_spec=None, dpi: int = 150, fmt: str
                 return _pptx_via_win32com(file_path, pages_spec, fmt)
             except ThumbnailError:
                 pass
+
+        if not allow_lo:
+            raise ThumbnailError(
+                "LibreOffice rendering disabled for this request; "
+                "no embedded thumbnail or Microsoft Office renderer available."
+            )
 
         lo = _find_libreoffice()
         if lo:

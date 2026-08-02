@@ -448,11 +448,15 @@ def extract_thumbnail(file_path: str, file_bytes: bytes,
                     return img_bytes
             except Exception:
                 pass
+        # No pre-converted PDF (OCR off): only use embedded thumbnail /
+        # win32com renderer — never LibreOffice, to avoid a slow conversion
+        # that would otherwise be charged to thumbnail_ms.
         images = extract_thumbnails(
             file_path=file_path,
             pages_spec="1",
             fmt=fmt,
             dpi=dpi,
+            allow_lo=False,
         )
         if images:
             key = 1 if 1 in images else next(iter(images))
